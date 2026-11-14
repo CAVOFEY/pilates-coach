@@ -1,0 +1,5 @@
+certs/
+tools/*.ttf
+tools/*.otf
+__pycache__/
+NUL

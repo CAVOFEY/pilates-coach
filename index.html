@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>普拉提 AI 教练</title>
+<style>
+/* 中文字体：OPPO Sans 4.0（可变字重 100–700），已裁剪到只含页面用到的字。改了文字后运行 tools/subset_font.py */
+@font-face {
+  font-family: "OPPO Sans";
+  src: url("./vendor/fonts/OPPOSans-subset.woff2") format("woff2");
+  font-weight: 100 700;
+  font-display: swap;
+}
+/* 数字和英文：Quicksand（SIL OFL），放在本地，不依赖外网 */
+@font-face {
+  font-family: "Quicksand";
+  src: url("./vendor/fonts/Quicksand-latin.woff2") format("woff2");
+  font-weight: 300 700;
+  font-display: swap;
+}
+/* 布局：桌面上是一台居中的“手机”，手机上铺满全屏；四个页面同一时间只显示一个 */
+:root {
+  --pink-50: #fff5f9;
+  --pink-100: #fde4ee;
+  --pink-200: #f9c9dc;
+  --pink-500: #e8789f;
+  --pink-600: #d75c88;
+  --teal-50: #edfaf7;
+  --teal-100: #d3f3ec;
+  --teal-300: #8fdccf;
+  --teal-500: #3bb8a6;
+  --teal-700: #1f7f73;
+  --ink: #3a2f3b;
+  --ink-soft: #736676;
+  --line: #f0dce6;
+  --stage: #2a2430;
+  --font-num: "Quicksand", "OPPO Sans", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font: "OPPO Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --r-lg: 28px;
+  --r-md: 18px;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; margin: 0; }
+body {
+  font-family: var(--font);
+  color: var(--ink);
+  background: linear-gradient(160deg, var(--pink-100), var(--teal-100));
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+button:focus-visible { outline: 3px solid var(--teal-500); outline-offset: 3px; }
+
+#phone {
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  background: var(--pink-50);
+  overflow: hidden;
+}
+@media (min-width: 520px) {
+  #phone {
+    width: 390px;
+    height: min(844px, 96dvh);
+    border-radius: 44px;
+    box-shadow: 0 30px 80px rgba(120, 70, 100, .28), 0 0 0 10px #fff;
+  }
+}
+.screen { position: absolute; inset: 0; display: flex; flex-direction: column; scrollbar-width: none; }
+.screen::-webkit-scrollbar { display: none; }
+
+/* ---------- 通用文字 ---------- */
+#home { padding: max(22px, env(safe-area-inset-top)) 22px max(18px, env(safe-area-inset-bottom)); }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand svg { width: 34px; height: 34px; }
+.brand span { font-family: var(--font-num); font-weight: 700; letter-spacing: .04em; font-size: 15px; color: var(--ink-soft); }
+h1 { font-size: 34px; line-height: 1.15; margin: 0; font-weight: 600; }
+h2 { font-size: 18px; margin: 0; font-weight: 600; }
+.eyebrow { font-size: 12px; letter-spacing: .18em; color: var(--ink-soft); margin: 0 0 6px; }
+
+.btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 58px; padding: 0 22px; border-radius: 999px;
+  font-size: 18px; font-weight: 600;
+  transition: transform .12s ease, filter .12s ease;
+}
+.btn-primary { background: var(--pink-500); color: #fff; box-shadow: 0 8px 20px rgba(232, 120, 159, .35); }
+.btn-ghost { background: #fff; color: var(--teal-700); border: 1.5px solid var(--teal-300); }
+.btn-link { min-height: 44px; font-size: 15px; font-weight: 500; color: var(--teal-700); align-self: center; }
+.btn-row { display: flex; flex-direction: column; gap: 8px; }
+.section { display: flex; flex-direction: column; gap: 12px; }
+
+/* ---------- 摄像头舞台（摆放 + 跟练共用） ---------- */
+#stageScreen { background: var(--stage); color: #fff; }
+#stage { position: absolute; inset: 0; display: grid; place-items: center; }
+#view { position: relative; max-width: 100%; max-height: 100%; aspect-ratio: 9 / 16; height: 100%; }
+#view video, #view canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+#view video { object-fit: fill; }
+#view.mirror video, #view.mirror canvas { transform: scaleX(-1); }
+
+.top {
+  position: absolute; left: 0; right: 0; top: 0; z-index: 3;
+  padding: max(14px, env(safe-area-inset-top)) 14px 30px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: linear-gradient(to bottom, rgba(30, 22, 34, .7), transparent);
+}
+.pill {
+  min-height: 40px; padding: 0 14px; border-radius: 999px;
+  background: rgba(255, 255, 255, .18); color: #fff; font-size: 14px;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.top .title { font-size: 14px; letter-spacing: .1em; opacity: .9; }
+
+.bottom {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 3;
+  padding: 44px 16px max(18px, env(safe-area-inset-bottom));
+  background: linear-gradient(to top, rgba(30, 22, 34, .82), transparent);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.status { font-size: 20px; font-weight: 600; line-height: 1.35; text-wrap: balance; }
+.parts { display: flex; flex-wrap: wrap; gap: 6px; }
+.part {
+  font-size: 13px; padding: 5px 11px; border-radius: 999px;
+  background: rgba(255, 255, 255, .14); color: rgba(255, 255, 255, .7);
+}
+.part.ok { background: var(--teal-500); color: #fff; }
+.part.miss { background: var(--pink-500); color: #fff; }
+
+/* 跟练 HUD */
+#hud { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.count { font-family: var(--font-num); font-weight: 700; line-height: .9; font-variant-numeric: tabular-nums; }
+.count #repNow { font-size: 96px; }
+.count #repAll { font-size: 30px; opacity: .65; }
+.phase { text-align: right; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.phase #phaseText { font-size: 22px; font-weight: 600; }
+.meter { width: 150px; height: 10px; border-radius: 999px; background: rgba(255, 255, 255, .2); position: relative; overflow: hidden; }
+.meter i { position: absolute; inset: 0; border-radius: inherit; background: var(--pink-200); transform: scaleX(0); transform-origin: 0 50%; transition: transform .12s linear, background-color .2s; }
+.meter.good i { background: var(--teal-300); }
+.meter-label { font-size: 12px; opacity: .7; letter-spacing: .08em; }
+
+#toast {
+  position: absolute; z-index: 4; left: 16px; right: 16px; top: 22%;
+  padding: 16px 18px; border-radius: var(--r-md);
+  font-size: 22px; font-weight: 600; line-height: 1.35; text-align: center; text-wrap: balance;
+  background: var(--pink-500); color: #fff;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .3);
+  opacity: 0; transform: translateY(-8px); transition: opacity .25s, transform .25s; pointer-events: none;
+}
+#toast.show { opacity: 1; transform: none; }
+#toast.good { background: var(--teal-500); }
+#toast.info { background: rgba(255, 255, 255, .92); color: var(--ink); }
+
+#loading {
+  position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; text-align: center;
+  background: var(--stage); padding: 30px; font-size: 16px; line-height: 1.7;
+}
+.spinner { width: 42px; height: 42px; margin: 0 auto 16px; border-radius: 50%; border: 4px solid rgba(255, 255, 255, .2); border-top-color: var(--pink-200); animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- 小结 ---------- */
+#summary { overflow-y: auto; padding: max(34px, env(safe-area-inset-top)) 22px 28px; gap: 22px; }
+#summary h1 { font-size: 34px; letter-spacing: 0; text-wrap: balance; }
+.big { font-family: var(--font-num); font-weight: 700; font-size: 84px; line-height: 1; color: var(--pink-500); font-variant-numeric: tabular-nums; }
+.big small { font-size: 22px; color: var(--ink-soft); font-weight: 600; margin-left: 6px; }
+.stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.stat { background: #fff; border-radius: var(--r-md); padding: 14px 12px; border: 1.5px solid var(--line); }
+.stat b { display: block; font-family: var(--font-num); font-size: 24px; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 12px; color: var(--ink-soft); }
+.note { background: var(--teal-50); border-radius: var(--r-md); padding: 16px; font-size: 15px; line-height: 1.7; }
+.note b { color: var(--teal-700); }
+.reps { display: flex; flex-wrap: wrap; gap: 6px; }
+.rep { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-family: var(--font-num); font-size: 13px; font-weight: 700; background: var(--teal-100); color: var(--teal-700); }
+.rep.bad { background: var(--pink-100); color: var(--pink-600); }
+
+/* ================= 首页 ================= */
+#home {
+  --home-bg: var(--pink-50);
+  --home-fg: var(--ink);
+  --home-soft: var(--ink-soft);
+  --art-bg: linear-gradient(180deg, rgba(237,250,247,.75), rgba(253,228,238,.55));
+  --fig-body: 124,111,126; --fig-hot: 232,120,159; --fig-mat: 124,111,126; --fig-w: 7;
+  background: var(--home-bg); color: var(--home-fg);
+}
+#home.dark {
+  --home-bg: radial-gradient(90% 50% at 50% 36%, #4b3a55 0%, transparent 75%), linear-gradient(170deg, #2a2230, #1f3336);
+  --home-fg: #fff;
+  --home-soft: rgba(255,255,255,.62);
+  --art-bg: rgba(255,255,255,.04);
+  --fig-body: 255,255,255; --fig-hot: 249,160,195; --fig-mat: 143,220,207;
+}
+.home-top { display: flex; align-items: center; justify-content: space-between; }
+#home .brand span { color: var(--home-soft); }
+.theme-btn { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--home-soft); }
+.theme-btn svg { width: 20px; height: 20px; }
+.home-mid { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 22px; padding-bottom: 6%; }
+.art { border-radius: 26px; background: var(--art-bg); padding: 34px 12px 30px; }
+.art canvas { width: 100%; display: block; aspect-ratio: 32 / 15; }
+.info { display: flex; align-items: baseline; justify-content: center; gap: 12px; }
+.info b { font-size: 20px; font-weight: 500; letter-spacing: .22em; }
+.info span { font-size: 13px; color: var(--home-soft); letter-spacing: .1em; }
+.go {
+  min-height: 84px; border-radius: 999px; margin-top: 6px;
+  color: #3a2f3b; font-size: 28px; font-weight: 600; letter-spacing: .22em; text-indent: .22em;
+  background: linear-gradient(100deg, #f9c9dc 0%, #f4a9c4 45%, #8fdccf 100%);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.5) inset, 0 14px 34px rgba(244,169,196,.5), 0 6px 40px rgba(143,220,207,.3);
+  transition: transform .12s;
+}
+#home .btn-link { color: var(--home-soft); margin-top: -8px; }
+
+/* ================= 动效 =================
+   主角：首页小人的一次呼吸（抬起、停住、放下），“开始跟练”的光跟着同一口气起伏。
+   其余只做三件事：交代页面去向、确认操作、标出状态变化。 */
+:root { --out: cubic-bezier(.16, 1, .3, 1); }
+::selection { background: var(--pink-200); color: var(--ink); }
+
+/* 开始按钮：光晕放在单独一层，只改透明度 */
+.go { position: relative; isolation: isolate; }
+.go::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: -1; pointer-events: none;
+  box-shadow: 0 18px 46px rgba(244, 169, 196, .75), 0 10px 60px rgba(143, 220, 207, .5);
+  opacity: var(--breath, 0);
+}
+#home { transition: color .3s; }
+
+/* 进入跟练：深色画面从“开始跟练”的位置展开 */
+.enter-reveal { animation: reveal .6s var(--out) both; }
+@keyframes reveal {
+  from { clip-path: circle(0 at var(--ox, 50%) var(--oy, 60%)); }
+  to { clip-path: circle(150% at var(--ox, 50%) var(--oy, 60%)); }
+}
+/* 练完：小结从下方升上来 */
+.enter-rise { animation: rise .44s var(--out) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(28px); } }
+/* 返回首页：只淡入，比进入快 */
+.enter-fade { animation: fade .22s ease-out both; }
+@keyframes fade { from { opacity: 0; } }
+
+/* 摆放：部位标签变色、保持不动的进度 */
+.part { transition: background-color .22s, color .22s; }
+.hold { height: 4px; margin-top: 10px; border-radius: 999px; background: rgba(255, 255, 255, .16); overflow: hidden; }
+.hold i { display: block; height: 100%; border-radius: inherit; background: var(--teal-300); transform: scaleX(0); transform-origin: 0 50%; transition: transform .12s linear; }
+
+/* 跟练：计数跳一下，面板升上来，高度条用缩放不用宽度 */
+#repNow { display: inline-block; transform-origin: 20% 80%; }
+#repNow.pop { animation: pop .42s var(--out); }
+@keyframes pop { from { transform: scale(1.22); color: var(--teal-300); } }
+.enter-hud { animation: rise .36s var(--out) both; }
+#phaseText { transition: opacity .15s; }
+
+/* 提示条：出现从容，消失干脆 */
+#toast { transform: translateY(-10px) scale(.97); transition: opacity .16s ease-in, transform .16s ease-in; }
+#toast.show { transform: none; transition: opacity .3s var(--out), transform .3s var(--out); }
+
+/* 小结：每一次的圆点依次出现 */
+#summary.enter-rise .rep { animation: dot .3s var(--out) backwards; }
+@keyframes dot { from { opacity: 0; transform: scale(.6); } }
+
+/* ================= 按钮交互 =================
+   按下要快（约 90 毫秒），松开要从容（约 320 毫秒）。
+   手指落在哪，光就从哪里漾开；主按钮按下去是“沉”下去的，颜色同时向蓝绿流动。 */
+@property --rr { syntax: "<length>"; inherits: false; initial-value: 0px; }
+.go, .btn-primary, .btn-ghost, .pill { position: relative; isolation: isolate; --ink: rgba(255, 255, 255, .6); }
+.btn-ghost { --ink: rgba(59, 184, 166, .2); }
+.pill { --ink: rgba(255, 255, 255, .35); }
+.go::before, .btn-primary::before, .btn-ghost::before, .pill::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: -1; pointer-events: none; opacity: 0;
+  background: radial-gradient(circle at var(--rx, 50%) var(--ry, 50%), var(--ink), transparent var(--rr));
+}
+.ripple::before { animation: ink .62s var(--out); }
+@keyframes ink { from { --rr: 0px; opacity: 1; } to { --rr: 300px; opacity: 0; } }
+
+/* 所有按钮共用的节奏 */
+button, .go, .btn, .pill, .btn-link, .theme-btn { transition: transform .32s var(--out), filter .32s var(--out), opacity .32s var(--out), box-shadow .32s var(--out), background-color .32s, background-position .6s var(--out); touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09s, .25s; }
+
+/* 主按钮：沉下去，影子收紧，颜色流向蓝绿 */
+.go {
+  background-size: 170% 100%; background-position: 0% 50%;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .5) inset, 0 14px 34px rgba(244, 169, 196, .5), 0 6px 40px rgba(143, 220, 207, .3);
+}
+.go.pressed, .go:active {
+  transform: translateY(3px) scale(.972);
+  background-position: 100% 50%;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .5) inset, 0 5px 14px rgba(244, 169, 196, .55), 0 2px 12px rgba(143, 220, 207, .3);
+}
+@media (hover: hover) {
+  .go:hover:not(.pressed) { background-position: 45% 50%; transform: translateY(-1px); }
+  .btn-primary:hover:not(.pressed), .btn-ghost:hover:not(.pressed) { filter: brightness(1.04); }
+  .btn-link:hover, .theme-btn:hover { opacity: .75; }
+}
+
+/* 实心和描边按钮：轻轻压下 */
+.btn-primary.pressed, .btn-primary:active { transform: translateY(2px) scale(.975); box-shadow: 0 3px 10px rgba(232, 120, 159, .4); filter: brightness(.97); }
+.btn-ghost.pressed, .btn-ghost:active { transform: scale(.975); background: var(--teal-50); }
+.pill.pressed, .pill:active { transform: scale(.94); filter: brightness(1.25); opacity: 1; }
+/* 文字按钮和图标按钮：只做透明度和很小的缩放 */
+.btn-link.pressed, .btn-link:active { transform: scale(.96); opacity: .5; }
+.theme-btn.pressed, .theme-btn:active { transform: scale(.86); opacity: .7; }
+
+/* 主题图标：月亮和太阳转着换 */
+.theme-btn { position: relative; }
+.theme-btn svg { position: absolute; inset: 10px; width: 20px; height: 20px; transition: transform .5s var(--out), opacity .25s; }
+.ic-sun { opacity: 0; transform: rotate(-90deg) scale(.5); }
+#home.dark .ic-sun { opacity: 1; transform: none; }
+#home.dark .ic-moon { opacity: 0; transform: rotate(90deg) scale(.5); }
+
+/* 减弱动效：去掉位移和展开，保留淡入和颜色变化 */
+@media (prefers-reduced-motion: reduce) {
+  .enter-reveal, .enter-rise, .enter-hud { animation: fade .2s ease-out both; }
+  #repNow.pop { animation: none; }
+  #summary.enter-rise .rep { animation: fade .2s ease-out backwards; }
+  #toast, #toast.show { transform: none; }
+  button, button.pressed, button:active { transition: opacity .15s, filter .15s; transform: none !important; }
+  .go.pressed, .go:active, .btn.pressed, .btn:active { opacity: .82; }
+  .ripple::before { animation: none; }
+  .theme-btn svg { transition: opacity .2s; transform: none !important; }
+}
+</style>
+</head>
+<body>
+<div id="phone">
+
+  <!-- 首页（默认浅色；右上角可切换深色，或用 ?theme=dark） -->
+  <section class="screen" id="home">
+    <div class="home-top">
+      <div class="brand">
+        <svg viewBox="0 0 34 34" aria-hidden="true">
+          <circle cx="17" cy="17" r="17" fill="#f9c9dc"/>
+          <path d="M6 23 L15 13 L27 23" fill="none" stroke="#3bb8a6" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="7.5" cy="19" r="2.6" fill="#e8789f"/>
+        </svg>
+        <span>PILATES COACH</span>
+      </div>
+      <button class="theme-btn" id="btnTheme" aria-label="切换深色或浅色">
+        <svg class="ic-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" fill="currentColor"/></svg>
+        <svg class="ic-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.4" fill="currentColor"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M18.7 5.3 17 7M7 17l-1.7 1.7"/></g></svg>
+      </button>
+    </div>
+
+    <div class="home-mid">
+      <div class="art"><canvas id="demoFig" width="640" height="300" aria-label="桥式动作示范动画"></canvas></div>
+      <div class="info"><b>桥式</b><span>约 3 分钟 · 10 次</span></div>
+      <button class="go" id="btnStart">开始跟练</button>
+      <button class="btn btn-link" id="btnDemo">先看演示</button>
+    </div>
+  </section>
+
+  <!-- 摆放 + 跟练 -->
+  <section class="screen" id="stageScreen" hidden>
+    <div id="stage">
+      <div id="view">
+        <video id="video" playsinline muted></video>
+        <canvas id="overlay"></canvas>
+      </div>
+    </div>
+
+    <div class="top">
+      <button class="pill" id="btnBack" aria-label="返回">← 返回</button>
+      <span class="title" id="stageTitle">摆放手机</span>
+      <button class="pill" id="btnFlip">翻转镜头</button>
+    </div>
+
+    <div id="toast" role="status" aria-live="polite"></div>
+
+    <div class="bottom">
+      <!-- 摆放阶段 -->
+      <div id="setupPanel">
+        <div class="status" id="setupStatus">正在打开摄像头…</div>
+        <div class="hold" aria-hidden="true"><i id="holdBar"></i></div>
+        <div class="parts" id="parts" style="margin-top:12px">
+          <span class="part" data-k="head">头</span>
+          <span class="part" data-k="shoulder">肩</span>
+          <span class="part" data-k="hip">髋</span>
+          <span class="part" data-k="knee">膝</span>
+          <span class="part" data-k="ankle">脚踝</span>
+        </div>
+        <button class="btn btn-ghost" id="btnForce" style="margin-top:14px">不等了，直接开始</button>
+      </div>
+      <!-- 跟练阶段 -->
+      <div id="hud" hidden>
+        <div class="count"><span id="repNow">0</span><span id="repAll"> / 10</span></div>
+        <div class="phase">
+          <span id="phaseText">准备</span>
+          <div class="meter" id="meter"><i></i></div>
+          <span class="meter-label">抬起高度</span>
+          <button class="pill" id="btnEnd">结束</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="loading">
+      <div><div class="spinner"></div><div id="loadingText">正在加载动作识别模型…</div></div>
+    </div>
+  </section>
+
+  <!-- 小结 -->
+  <section class="screen" id="summary" hidden>
+    <div>
+      <p class="eyebrow">练完了</p>
+      <h1 id="sumTitle">做得不错。</h1>
+    </div>
+    <div class="big"><span id="sumGood">0</span><small id="sumOf">/ 10 次标准</small></div>
+    <div class="stats">
+      <div class="stat"><b id="sumTime">0:00</b><span>用时</span></div>
+      <div class="stat"><b id="sumAngle">0°</b><span>平均抬起角度</span></div>
+      <div class="stat"><b id="sumTry">0</b><span>总尝试次数</span></div>
+    </div>
+    <div class="section">
+      <h2>每一次的情况</h2>
+      <div class="reps" id="sumReps"></div>
+    </div>
+    <div class="note" id="sumNote"></div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btnAgain">再练一组</button>
+      <button class="btn btn-ghost" id="btnHome">回首页</button>
+    </div>
+  </section>
+
+</div>
+<script>
+// 调试用：把页面报错显示在屏幕底部，并发回电脑上的服务器
+(function () {
+  function report(msg) {
+    try { new Image().src = './__log?' + encodeURIComponent(msg + ' | ' + navigator.userAgent); } catch (e) {}
+    var el = document.getElementById('errBox');
+    if (!el) {
+      el = document.createElement('div'); el.id = 'errBox';
+      el.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;z-index:9999;padding:10px 12px;border-radius:10px;background:#3a1420;color:#fff;font:12px/1.5 monospace;white-space:pre-wrap;word-break:break-all;max-height:40vh;overflow:auto';
+      document.body.appendChild(el);
+    }
+    el.textContent += msg + '\n';
+  }
+  window.__report = report;
+  window.addEventListener('error', function (e) {
+    if (e.target && e.target.tagName) report('LOAD FAIL ' + (e.target.src || e.target.href || e.target.tagName));
+    else report('ERROR ' + e.message + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno + ':' + e.colno);
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) { report('REJECT ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason)); });
+  setTimeout(function () { if (!window.__app) report('app.js 4 秒内没有跑起来'); else new Image().src = './__log?' + encodeURIComponent('OK app started | ' + navigator.userAgent); }, 4000);
+})();
+</script>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
