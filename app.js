@@ -426,19 +426,56 @@ class DemoSource {
 }
 
 // ---------- 摄像头 + MediaPipe ----------
+// 加载分几步，每一步都把进度写到加载界面上，卡在哪一步一眼能看出来
+let loadStatus = '';
+function setLoadStatus(text) {
+  loadStatus = text;
+  if (App.phase === 'loading' && App.mode !== 'demo') $('loadingText').textContent = text;
+}
+const withTimeout = (promise, ms, message) =>
+  Promise.race([promise, new Promise((_, no) => setTimeout(() => no(new Error(message)), ms))]);
+/** 自己下载文件，这样能显示已经下了多少 */
+async function fetchBytes(url, label) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${label}下载失败（${r.status}）`);
+  const reader = r.body?.getReader?.();
+  if (!reader) return new Uint8Array(await r.arrayBuffer());
+  const chunks = []; let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value); got += value.length;
+    setLoadStatus(`${label}：已下载 ${(got / 1048576).toFixed(1)} MB`);
+  }
+  const out = new Uint8Array(got); let o = 0;
+  for (const c of chunks) { out.set(c, o); o += c.length; }
+  return out;
+}
 let landmarkerPromise = null;
 function loadModel() {
   return (landmarkerPromise ??= (async () => {
+    setLoadStatus('第 1 步 / 共 3 步：下载识别程序…');
     const { PoseLandmarker, FilesetResolver } = await import('./vendor/tasks-vision/vision_bundle.mjs');
     const fileset = await FilesetResolver.forVisionTasks('./vendor/tasks-vision/wasm');
+    // 先把最大的两个文件下到浏览器缓存里（约 10 MB + 6 MB），后面启动时就不用再等网络
+    await fetchBytes(fileset.wasmBinaryPath, '第 1 步 / 共 3 步：识别程序');
+    const model = await fetchBytes('./vendor/pose_landmarker_lite.task', '第 2 步 / 共 3 步：识别模型');
     const make = (delegate) =>
       PoseLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: './vendor/pose_landmarker_lite.task', delegate },
+        baseOptions: { modelAssetBuffer: model, delegate },
         runningMode: 'VIDEO',
         numPoses: 1,
       });
-    try { return await make('GPU'); } catch { return await make('CPU'); }
-  })().catch((e) => { landmarkerPromise = null; throw e; }));
+    setLoadStatus('第 3 步 / 共 3 步：启动识别（显卡加速）…');
+    try {
+      return await withTimeout(make('GPU'), 15000, 'GPU 启动超时');
+    } catch (e) {
+      console.warn('GPU 启动失败，改用 CPU', e);
+      setLoadStatus('第 3 步 / 共 3 步：启动识别（兼容模式）…');
+      return await withTimeout(make('CPU'), 45000, '识别模型启动超时。请刷新页面再试一次。');
+    }
+  })().then((m) => { setLoadStatus('识别已就绪，正在等待摄像头…'); return m; })
+    .catch((e) => { landmarkerPromise = null; throw e; }));
 }
 
 class CameraSource {
@@ -455,9 +492,10 @@ class CameraSource {
       }),
     ]);
     this.stream = stream;
+    setLoadStatus('正在打开摄像头画面…');
     const video = $('video');
     video.srcObject = stream;
-    await video.play();
+    await withTimeout(video.play(), 10000, '摄像头画面没有出来。请刷新页面再试一次。');
     const w = video.videoWidth, h = video.videoHeight;
     let lastDetect = 0, lastVideoTime = -1, lms = null, shown = null, lastDraw = 0;
     const loop = () => {
@@ -646,7 +684,7 @@ const App = {
     this.show('stageScreen', from);
     this.phase = 'loading';
     $('loading').hidden = false;
-    $('loadingText').textContent = mode === 'demo' ? '正在准备演示…' : '正在加载动作识别模型，并请求摄像头权限…';
+    $('loadingText').textContent = mode === 'demo' ? '正在准备演示…' : (loadStatus || '正在加载动作识别模型，并请求摄像头权限…');
     $('setupPanel').hidden = false; $('hud').hidden = true;
     $('stageTitle').textContent = '摆放手机';
     $('btnFlip').hidden = mode === 'demo';
@@ -816,6 +854,7 @@ $('btnFlip').onclick = () => { App.facing = App.facing === 'user' ? 'environment
 addEventListener('resize', () => App.phase !== 'home' && App.fitView());
 
 startHomeFigure();
-window.__app = App; // 方便调试
+window.__app = App;
+if (!new URLSearchParams(location.search).has('demo')) setTimeout(() => loadModel().catch(() => {}), 1200); // 方便调试
 window.__test = { BridgeCoach, SetupGuide, DemoSource, demoPose, readBody };
 if (new URLSearchParams(location.search).has('demo')) App.start('demo');
