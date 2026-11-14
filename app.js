@@ -992,7 +992,7 @@ function idealHeelslide(R) {
 /** 标准动作在每段口令里做到几成 */
 const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg === 'hold' ? 1 : seg === 'down' ? 1 - ease(clamp(sec / 3.4, 0, 1)) : 0);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=19'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=20'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -1503,6 +1503,9 @@ addEventListener('orientationchange', () => setTimeout(() => App.phase !== 'home
 startFigure('demoFig', 'home');
 startFigure('introFig', 'intro');
 window.__app = App;
-if (!new URLSearchParams(location.search).has('demo')) setTimeout(() => loadModel().catch(() => {}), 1200); // 方便调试
+// 首页一打开就在后台把 3D 小人准备好（下载 3D 库、建好场景），这样点“开始跟练”时 3D 直接出现，不用先看一会儿平面小人
+setTimeout(() => Intro3D.set('3d'), 250);
+// 识别模型比较大，排在 3D 后面再开始下载
+if (!new URLSearchParams(location.search).has('demo')) setTimeout(() => loadModel().catch(() => {}), 2000); // 方便调试
 window.__test = { stdJoints, Cmp, Coach, SetupGuide, DemoSource, demoPose, readBody, EXERCISES, pick: (i) => App.pick(i, 1) };
 if (new URLSearchParams(location.search).has('demo')) App.start('demo');
