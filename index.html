@@ -352,16 +352,12 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
 .muscles { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); }
 .muscles b { font-weight: 500; padding: 6px 13px; border-radius: 999px; background: var(--pink-100); color: var(--ink); }
 .steps { margin: 0 -8px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
-.steps li { display: grid; grid-template-columns: 2.6em 1fr auto; align-items: center; column-gap: 14px; padding: 10px 12px 10px 14px; border-radius: 16px; position: relative; isolation: isolate; }
-/* 当前这一拍：一抹从左到右淡出去的白色，只改透明度 */
-.steps li::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: linear-gradient(90deg, #fff 0%, rgba(255,255,255,.6) 45%, rgba(255,255,255,0) 100%); opacity: 0; transition: opacity .45s var(--out); }
-.steps b { font-size: 19px; font-weight: 700; letter-spacing: .06em; color: var(--ink); transition: color .3s; }
+.steps li { display: grid; grid-template-columns: 2.6em 1fr auto; align-items: center; column-gap: 14px; padding: 10px 12px 10px 14px; border-radius: 16px; }
+.steps b { font-size: 19px; font-weight: 700; letter-spacing: .06em; color: var(--ink); }
 .steps span { font-size: 14.5px; line-height: 1.45; color: var(--ink-soft); }
 .steps em { font-style: normal; font-size: 12px; font-weight: 500; letter-spacing: .08em; padding: 4px 10px; border-radius: 999px; }
 .steps em.out { background: var(--teal-100); color: var(--teal-700); }
 .steps em.in { background: var(--pink-100); color: #a53d68; }
-.steps li.on::before { opacity: 1; }
-.steps li.on b { color: var(--pink-600); }
 .tip { margin: 0; font-size: 13px; line-height: 1.65; color: var(--ink-soft); background: var(--teal-50); padding: 12px 14px; border-radius: var(--r-md); }
 #intro .btn-primary { margin-top: auto; flex: none; }
 
@@ -445,7 +441,7 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
       <canvas id="intro3d" class="c3d" hidden aria-label="可以拖动旋转的 3D 动作示范"></canvas>
       <span class="hint3d" id="hint3d" hidden>用手指拖动，可以绕着看</span>
     </div>
-    <!-- 四拍：和示范小人、教练口令是同一个顺序；小人做到哪一拍，哪一行亮起来 -->
+    <!-- 四拍：和示范小人、教练口令是同一个顺序 -->
     <ol class="steps" id="introSteps">
       <li><b>躺好</b><span>屈膝，双脚踩地，手放两边</span></li>
       <li><b>抬起</b><span>夹紧臀部，抬成一条直线</span><em class="out">呼气</em></li>
@@ -563,6 +559,6 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
   setTimeout(function () { if (!window.__app) report('app.js 4 秒内没有跑起来'); else new Image().src = './__log?' + encodeURIComponent('OK app started | ' + navigator.userAgent); }, 4000);
 })();
 </script>
-<script type="module" src="./app.js?v=13"></script>
+<script type="module" src="./app.js?v=14"></script>
 </body>
 </html>
