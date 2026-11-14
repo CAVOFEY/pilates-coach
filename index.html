@@ -179,6 +179,20 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 #recVideo { width: 100%; max-height: 62vh; border-radius: var(--r-md); background: #1c171f; display: block; }
 .rec-note { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-soft); }
 
+/* ---------- 3D 示范和对比 ---------- */
+.seg { align-self: flex-start; display: inline-flex; padding: 3px; border-radius: 999px; background: var(--pink-100); flex: none; }
+.seg button { min-height: 34px; padding: 0 16px; border-radius: 999px; font-size: 13px; color: var(--ink-soft); }
+.seg button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 4px rgba(120, 70, 100, .16); }
+.art canvas.c3d { aspect-ratio: 32 / 19; touch-action: none; cursor: grab; }
+.hint3d { display: block; text-align: center; font-size: 12px; color: var(--ink-soft); margin-top: 4px; }
+.art.art3d { background: linear-gradient(180deg, rgba(237,250,247,.75), rgba(253,228,238,.55)); padding: 10px 6px; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--ink-soft); }
+.lg::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+.lg.you::before { background: var(--pink-500); }
+.lg.std::before { background: var(--teal-300); }
+#cmpReps .rep { cursor: pointer; }
+#cmpReps .rep.sel { box-shadow: 0 0 0 2px var(--ink); }
+
 /* ================= 首页 ================= */
 #home {
   --home-bg: var(--pink-50);
@@ -348,6 +362,7 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
   .home-mid { flex: none; padding-bottom: 0; gap: 10px; margin-top: 6px; }
   .art, #intro .art { align-self: center; padding: 8px 20px; }
   .art canvas { width: auto; height: 118px; }
+  .art canvas.c3d { height: 150px; aspect-ratio: 2 / 1; }
   .go { min-height: 58px; font-size: 22px; align-self: center; min-width: 320px; margin-top: 0; }
   #home .btn-link { margin-top: -4px; }
   #intro .btn-primary { margin-top: 0; }
@@ -401,7 +416,15 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
       <button class="btn btn-link" id="btnReplay">再讲一遍</button>
     </div>
     <h1>桥式</h1>
-    <div class="art"><canvas id="introFig" width="640" height="300" aria-label="桥式动作示范动画"></canvas></div>
+    <div class="seg" role="tablist" aria-label="示范方式">
+      <button id="tab3d" role="tab" class="on">3D 可拖动</button>
+      <button id="tab2d" role="tab">平面</button>
+    </div>
+    <div class="art">
+      <canvas id="introFig" width="640" height="300" aria-label="桥式动作示范动画"></canvas>
+      <canvas id="intro3d" class="c3d" hidden aria-label="可以拖动旋转的 3D 动作示范"></canvas>
+      <span class="hint3d" id="hint3d" hidden>用手指拖动，可以绕着看</span>
+    </div>
     <div class="muscles"><span>练到</span><b>臀部</b><b>大腿后侧</b><b>核心</b></div>
     <ol class="steps">
       <li><i>1</i><span>仰卧，屈膝，双脚踩地，与髋同宽，手臂放在身体两侧。</span></li>
@@ -477,6 +500,13 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
       <div class="reps" id="sumReps"></div>
     </div>
     <div class="note" id="sumNote"></div>
+    <div class="section" id="cmpBox" hidden>
+      <h2>3D 对比：你和标准</h2>
+      <div class="art art3d"><canvas id="cmp3d" class="c3d" aria-label="你的动作和标准动作的 3D 对比，可以拖动旋转"></canvas></div>
+      <div class="legend"><span class="lg you">你的动作</span><span class="lg std">按你的身材算出的标准</span></div>
+      <div class="reps" id="cmpReps"></div>
+      <p class="rec-note" id="cmpNote"></p>
+    </div>
     <div class="section" id="recBox" hidden>
       <h2>回看这一次</h2>
       <video id="recVideo" controls playsinline></video>

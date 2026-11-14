@@ -662,7 +662,7 @@ class CameraSource {
     try { await withTimeout(video.play(), 10000, '摄像头画面没有出来。请刷新页面再试一次。'); }
     catch (e) { debugNote('播放摄像头画面', e); throw e; }
     let w = video.videoWidth, h = video.videoHeight;
-    let lastDetect = 0, lastVideoTime = -1, lms = null, shown = null, lastDraw = 0;
+    let lastDetect = 0, lastVideoTime = -1, lms = null, world = null, shown = null, lastDraw = 0;
     const loop = () => {
       const t = performance.now();
       // 手机转了方向，画面的宽高会对调：跟着更新
@@ -679,8 +679,9 @@ class CameraSource {
           runInfo.detectMs = runInfo.detectMs ? runInfo.detectMs * 0.9 + cost * 0.1 : cost;
           const raw = res.landmarks?.[0];
           lms = raw ? raw.map((p) => ({ x: p.x * w, y: p.y * h, v: p.visibility ?? 0 })) : null;
+          world = raw ? res.worldLandmarks?.[0] ?? null : null;
         } catch (e) { console.warn('detect failed', e); }
-        onFrame(lms, t);
+        onFrame(lms, t, world);
       }
       // 识别每秒约 15 次，画出来的骨架按屏幕刷新率向最新结果靠拢，线条不跳
       if (!lms) shown = null;
@@ -796,6 +797,160 @@ function startFigure(cvId, hostId) {
   requestAnimationFrame(frame);
 }
 
+// ---------- 3D：标准示范、真人动作、两者对比 ----------
+const V = {
+  add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
+  sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+  mid: (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2],
+  len: (a) => Math.hypot(a[0], a[1], a[2]),
+  lerp: (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k],
+};
+const mapJ = (J, fn) => Object.fromEntries(Object.entries(J).map(([k, v]) => [k, fn(v, k)]));
+const lerpJ = (A, B, k) => mapJ(A, (v, key) => V.lerp(v, B[key], k));
+const SIDE_PARTS = ['Sh', 'El', 'Wr', 'Hip', 'Kn', 'An', 'Toe'];
+/** 标准示范的 3D 关节：把平面示范（demoPose）立起来，左右两侧各偏开一点。p = 抬起程度 0~1 */
+function stdJoints(p) {
+  const L = demoPose(p), k = 0.0054, g = (n) => L[P[n]];
+  const at = (q, z) => [(q.x - 96) * k, (480 - q.y) * k, z];
+  const S = g('lSh'), H = g('lHip');
+  // 脊柱中段：抬到一半时下背还贴近垫子，到顶才拉直
+  const sag = 15 * Math.sin(Math.PI * clamp(p, 0, 1)) ** 0.9;
+  const M = { x: S.x + (H.x - S.x) * 0.53, y: S.y + (H.y - S.y) * 0.53 + sag * 0.5 };
+  const wide = { Sh: 0.19, El: 0.25, Wr: 0.26, Hip: 0.11, Kn: 0.11, An: 0.11, Toe: 0.12 };
+  const J = { head: at({ x: 58, y: 448 }, 0), spine: at(M, 0) };
+  for (const n of SIDE_PARTS) { J['l' + n] = at(g('l' + n), wide[n]); J['r' + n] = at(g('l' + n), -wide[n]); }
+  return J;
+}
+/** 摄像头识别出的 3D 关节（以髋为原点，单位米；模型的 y 朝下、z 朝里，这里翻成 y 朝上、z 朝外） */
+function userJoints(wl) {
+  const q = (i) => [wl[i].x, -wl[i].y, -wl[i].z];
+  const J = {};
+  for (const s of ['l', 'r']) for (const n of SIDE_PARTS) J[s + n] = q(P[s + n]);
+  J.head = V.mid(q(P.lEar), q(P.rEar));
+  J.spine = V.mid(V.mid(J.lSh, J.rSh), V.mid(J.lHip, J.rHip));
+  return J;
+}
+/** “按你的身材算出的标准顶端姿势”：肩和脚不动，把髋抬到肩、髋、膝成一条直线。R = 你躺平时的关节 */
+function idealTop(R) {
+  const S = V.mid(R.lSh, R.rSh), H = V.mid(R.lHip, R.rHip), K = V.mid(R.lKn, R.rKn), A = V.mid(R.lAn, R.rAn);
+  const Lt = V.len(V.sub(H, S)), Lth = V.len(V.sub(K, H)), Ls = V.len(V.sub(A, K));
+  const dx = A[0] - S[0], dz = A[2] - S[2], run = Math.hypot(dx, dz) || 1e-6, e = [dx / run, dz / run];
+  const ay = A[1] - S[1], R1 = Lt + Lth, d = Math.hypot(run, ay);
+  if (d > R1 + Ls - 1e-3 || d < Math.abs(R1 - Ls) + 1e-3) return null; // 量出来的身体比例凑不成一个桥，放弃对比
+  const a = (R1 * R1 - Ls * Ls + d * d) / (2 * d), h = Math.sqrt(Math.max(0, R1 * R1 - a * a));
+  const ux = run / d, uy = ay / d;
+  const c1 = [a * ux - h * uy, a * uy + h * ux], c2 = [a * ux + h * uy, a * uy - h * ux];
+  const k2 = c1[1] > c2[1] ? c1 : c2;                       // 膝盖取朝上的那个解
+  const to3 = (q) => [S[0] + e[0] * q[0], S[1] + q[1], S[2] + e[1] * q[0]];
+  const K3 = to3(k2), H3 = to3([(k2[0] * Lt) / R1, (k2[1] * Lt) / R1]);
+  const dH = V.sub(H3, H), dK = V.sub(K3, K);
+  return { ...R, lHip: V.add(R.lHip, dH), rHip: V.add(R.rHip, dH), lKn: V.add(R.lKn, dK), rKn: V.add(R.rKn, dK), spine: V.mid(S, H3) };
+}
+/** 标准动作在每段口令里抬到几成 */
+const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg === 'hold' ? 1 : seg === 'down' ? 1 - ease(clamp(sec / 3.4, 0, 1)) : 0);
+let fig3dPromise = null;
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js'); await m.load3D(); return m; })()
+  .catch((e) => { fig3dPromise = null; throw e; }));
+
+/** 讲解页的 3D 示范 */
+const Intro3D = {
+  viewer: null, mode: '3d',
+  async set(mode) {
+    this.mode = mode;
+    $('tab2d').classList.toggle('on', mode === '2d');
+    $('tab3d').classList.toggle('on', mode === '3d');
+    if (mode === '3d' && !this.viewer) {
+      try {
+        const m = await get3D();
+        if (!this.viewer) {
+          const v = this.viewer = new m.Viewer($('intro3d'));
+          v.figure('std', { color: 0xd8cddb, hot: 0xe8789f });
+          const io = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+          v.onTick = (now) => {
+            // 和平面示范同一个节奏：抬起 2.4 秒，停 2 秒，放下 2.6 秒，休息 1.6 秒
+            const c = (now / 1000) % 8.6;
+            const p = REDUCED ? 1 : c < 2.4 ? io(c / 2.4) : c < 4.4 ? 1 : c < 7 ? 1 - io((c - 4.4) / 2.6) : 0;
+            v.pose('std', stdJoints(p), p);
+          };
+          v.start();
+        }
+      } catch (e) { debugNote('3D 示范', e); this.mode = '2d'; $('tab3d').hidden = true; $('tab2d').classList.add('on'); }
+    }
+    const use3d = this.mode === '3d' && !!this.viewer;
+    $('introFig').hidden = use3d;
+    $('intro3d').hidden = !use3d;
+    $('hint3d').hidden = !use3d;
+  },
+};
+
+/** 小结页的 3D 对比：粉色是你，半透明蓝绿色是按你的身材算出的标准 */
+const Cmp = {
+  viewer: null, data: null, cur: 1, t0: 0,
+  async build(track, summaryReps) {
+    $('cmpBox').hidden = true;
+    this.data = null;
+    if (!track || track.length < 20) return;
+    // 躺平时的姿势：取“落地休息”那几段的平均
+    const restF = track.filter((f) => f.seg === 'rest');
+    const src = restF.length >= 5 ? restF : track.slice(0, 5);
+    const R0 = mapJ(src[0].J, (_, k) => [0, 1, 2].map((i) => src.reduce((sum, f) => sum + f.J[k][i], 0) / src.length));
+    // 挪到垫子中间、落到地面上
+    const c = V.mid(V.mid(R0.lSh, R0.rSh), V.mid(R0.lAn, R0.rAn));
+    const shift = [0.42 - c[0], 0.07 - Math.min(R0.lAn[1], R0.rAn[1], R0.lSh[1], R0.rSh[1]), -c[2]];
+    const rest = mapJ(R0, (v) => V.add(v, shift)), top = idealTop(rest);
+    if (!top) return;
+    const reps = {};
+    for (const f of track) (reps[f.rep] ??= []).push({ ...f, J: mapJ(f.J, (v) => V.add(v, shift)) });
+    const hipY = (J) => (J.lHip[1] + J.rHip[1]) / 2;
+    const list = Object.keys(reps).map(Number).sort((a, b) => a - b).filter((n) => reps[n].length >= 8);
+    if (!list.length) return;
+    this.data = { rest, top, reps, list, gap: {} };
+    for (const n of list) this.data.gap[n] = Math.round((hipY(top) - Math.max(...reps[n].map((f) => hipY(f.J)))) * 100);
+    try {
+      const m = await get3D();
+      if (!this.viewer) {
+        const v = this.viewer = new m.Viewer($('cmp3d'));
+        v.auto = false; v.yaw = 0.4;
+        v.figure('std', { color: 0x3bb8a6, opacity: 0.36 });
+        v.figure('you', { color: 0xe8789f });
+        v.onTick = (now) => this.tick(now);
+        v.start();
+      }
+    } catch (e) { debugNote('3D 对比', e); return; }
+    const box = $('cmpReps');
+    box.innerHTML = '';
+    for (const n of list) {
+      const el = document.createElement('button');
+      el.className = 'rep' + (summaryReps[n - 1] && !summaryReps[n - 1].ok ? ' bad' : '');
+      el.textContent = n;
+      el.setAttribute('aria-label', `看第 ${n} 次`);
+      el.onclick = () => this.pick(n);
+      box.appendChild(el);
+    }
+    $('cmpBox').hidden = false;
+    // 默认先看第一次不标准的；都标准就看第一次
+    this.pick(list.find((n) => summaryReps[n - 1] && !summaryReps[n - 1].ok) ?? list[0]);
+  },
+  pick(n) {
+    this.cur = n; this.t0 = performance.now();
+    [...$('cmpReps').children].forEach((el) => el.classList.toggle('sel', Number(el.textContent) === n));
+    const g = this.data.gap[n];
+    const verdict = g > 2 ? `髋比标准低约 ${g} 厘米。` : g < -2 ? `髋比标准高约 ${-g} 厘米，注意别用腰往上顶。` : '髋的高度和标准几乎重合。';
+    $('cmpNote').textContent = `第 ${n} 次的最高点：${verdict}用手指拖动可以绕着看。3D 位置是摄像头估算的，前后方向的误差比较大，仅供参考。`;
+  },
+  tick(now) {
+    const d = this.data;
+    if (!d) return;
+    const fr = d.reps[this.cur], first = fr[0].t, span = fr[fr.length - 1].t - first;
+    const at = first + ((now - this.t0) % (span + 900));       // 放完停一下再循环
+    let i = 0;
+    while (i < fr.length - 2 && fr[i + 1].t < at) i++;
+    const a = fr[i], b = fr[i + 1], k = clamp((at - a.t) / (b.t - a.t || 1), 0, 1);
+    this.viewer.pose('you', lerpJ(a.J, b.J, k));
+    this.viewer.pose('std', lerpJ(d.rest, d.top, stdLift(a.seg, a.sec + ((b.t - a.t) * k) / 1000)));
+  },
+};
+
 // ---------- 页面流程 ----------
 const INTRO_TEXT = '桥式。先看一遍动作。仰卧，屈膝，双脚踩地，与髋同宽，手臂放在身体两侧。'
   + '呼气，夹紧臀部，把骨盆一节一节卷离垫子，直到肩、髋、膝成一条直线。'
@@ -850,6 +1005,7 @@ const App = {
     Voice.unlock();
     this.phase = 'intro';
     this.show('intro');
+    Intro3D.set(Intro3D.mode);
     Voice.say(INTRO_TEXT, 2);
   },
 
@@ -888,7 +1044,7 @@ const App = {
         // 摆放阶段转了手机：录像按新的方向重新开始，免得横画面缩在竖视频中间
         if (turned && this.phase === 'setup') Rec.start(w, h);
       };
-      const info = await this.source.start((lms, t) => this.onFrame(lms, t), (lms) => this.draw(lms), resize);
+      const info = await this.source.start((lms, t, world) => this.onFrame(lms, t, world), (lms) => this.draw(lms), resize);
       $('view').classList.toggle('mirror', info.mirror);
       resize(info.w, info.h);
       Rec.start(info.w, info.h);
@@ -922,7 +1078,7 @@ const App = {
   },
 
   /** 每次拿到新的识别结果，更新教练的判断 */
-  onFrame(lms, t) {
+  onFrame(lms, t, world) {
     const b = readBody(lms);
     this.body = b;
 
@@ -936,6 +1092,13 @@ const App = {
     } else this.lostSince = null;
     const c = this.coach;
     c.update(b?.core ? b : null, t);
+    // 记下这一刻的 3D 姿势，练完后用来和标准动作对比
+    let J = this.mode === 'demo' ? stdJoints(this.source.liftAt(t)) : world && b?.core ? userJoints(world) : null;
+    if (J && c.rep && !c.done) {
+      if (this.trackJ) J = lerpJ(this.trackJ, J, 0.5);   // 轻轻平滑一下，减少抖动
+      this.trackJ = J;
+      this.track.push({ rep: c.rep, seg: c.seg, sec: (t - c.segStart) / 1000, t, J });
+    }
     $('phaseText').textContent = SEG_TEXT[c.seg];
     document.querySelector('#meter i').style.transform = `scaleX(${c.progress.toFixed(3)})`;
     $('meter').classList.toggle('good', c.atTop);
@@ -951,6 +1114,7 @@ const App = {
     toast('准备好了', 'good', 2200);
     Voice.say('准备好了。不用看屏幕，跟着我的口令做。', 2);
     this.coach = new BridgeCoach(rest, () => this.finish());
+    this.track = []; this.trackJ = null;
     if (this.source instanceof DemoSource) this.source.coach = this.coach;
     setTimeout(() => {
       if (this.phase !== 'countdown') return;
@@ -978,6 +1142,7 @@ const App = {
       this.renderSummary(s);
       this.showRecording(video);
       this.show('summary');
+      Cmp.build(this.track, s ? s.reps : []);
     }, s && s.attempts >= TARGET_REPS ? 1200 : 0);
   },
 
@@ -1062,6 +1227,8 @@ $('btnTheme').onclick = () => {
 $('btnStart').onclick = () => App.intro();
 $('btnIntroBack').onclick = () => App.home();
 $('btnReplay').onclick = () => Voice.say(INTRO_TEXT, 2);
+$('tab3d').onclick = () => Intro3D.set('3d');
+$('tab2d').onclick = () => Intro3D.set('2d');
 $('btnIntroGo').onclick = () => { Voice.stop(); App.start('camera', $('btnIntroGo')); };
 $('btnSaveRec').onclick = async () => {
   const blob = App.recBlob;
@@ -1103,5 +1270,5 @@ startFigure('demoFig', 'home');
 startFigure('introFig', 'intro');
 window.__app = App;
 if (!new URLSearchParams(location.search).has('demo')) setTimeout(() => loadModel().catch(() => {}), 1200); // 方便调试
-window.__test = { BridgeCoach, SetupGuide, DemoSource, demoPose, readBody };
+window.__test = { stdJoints, idealTop, Cmp, BridgeCoach, SetupGuide, DemoSource, demoPose, readBody };
 if (new URLSearchParams(location.search).has('demo')) App.start('demo');
