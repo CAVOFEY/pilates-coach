@@ -111,6 +111,8 @@ export class Viewer {
       hands: [pair(this.sph, mats.skin), pair(this.sph, mats.skin)],
       face: solid ? {
         eyes: [add(this.sph, new T.MeshBasicMaterial({ color: 0x4a3a50 })), add(this.sph, new T.MeshBasicMaterial({ color: 0x4a3a50 }))],
+        // 用力时的表情 > <：每只眼睛两根小短棍
+        squint: [0, 1, 2, 3].map(() => add(this.cyl, new T.MeshBasicMaterial({ color: 0x4a3a50, side: T.DoubleSide }))),
         blush: [add(this.sph, new T.MeshBasicMaterial({ color: 0xf7a8c0 })), add(this.sph, new T.MeshBasicMaterial({ color: 0xf7a8c0 }))],
       } : null,
     };
@@ -121,8 +123,8 @@ export class Viewer {
 
   show(key, visible) { if (this.figs[key]) this.figs[key].group.visible = visible; }
 
-  /** 把小人摆成给定的关节位置。glow 0~1 = 发力部位亮多少 */
-  pose(key, J, glow = 0) {
+  /** 把小人摆成给定的关节位置。glow 0~1 = 发力部位亮多少；effort = 是不是正在最用力（表情变成 > <） */
+  pose(key, J, glow = 0, effort = glow > 0.9) {
     const f = this.figs[key];
     if (!f || !J) return;
     const T = THREE;
@@ -169,6 +171,22 @@ export class Viewer {
       f.face.eyes.forEach((m, i) => {
         m.position.copy(head).addScaledVector(front, HEAD_R * 0.9).addScaledVector(side, (i ? -1 : 1) * HEAD_R * 0.36).addScaledVector(up, HEAD_R * 0.02);
         m.scale.setScalar(0.021);
+        m.visible = !effort;
+      });
+      // > <：尖角朝鼻子，两根短棍贴在脸的球面上
+      const onFace = (out, s, sideK, upK) => out.copy(front).multiplyScalar(0.9).addScaledVector(side, s * sideK).addScaledVector(up, upK)
+        .normalize().multiplyScalar(HEAD_R + 0.003).add(head);
+      f.face.squint.forEach((m, n) => {
+        m.visible = effort;
+        if (!effort) return;
+        const s = n < 2 ? 1 : -1, dir = n % 2 ? 1 : -1;
+        onFace(A, s, 0.24, 0.02);                 // 尖角（靠鼻子）
+        onFace(B, s, 0.52, 0.02 + dir * 0.17);    // 外侧上 / 下
+        D.subVectors(B, A);
+        const len = D.length();
+        m.position.addVectors(A, B).multiplyScalar(0.5);
+        m.scale.set(0.0085, len, 0.0085);
+        m.quaternion.setFromUnitVectors(UP, D.divideScalar(len));
       });
       f.face.blush.forEach((m, i) => {
         m.position.copy(head).addScaledVector(front, HEAD_R * 0.74).addScaledVector(side, (i ? -1 : 1) * HEAD_R * 0.6).addScaledVector(up, -HEAD_R * 0.22);
