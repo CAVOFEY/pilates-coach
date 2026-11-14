@@ -182,6 +182,10 @@ class SetupGuide {
       el.classList.toggle('ok', ok);
       el.classList.toggle('miss', !!b && !ok);
     });
+    if (App.mode === 'camera' && App.size.h > App.size.w * 1.1 && !b?.all) {
+      this.readySince = null;
+      return this.hint('rotate', '把手机横过来立稳，侧面对着你，更容易拍到全身。', t);
+    }
     if (!b || (!b.seen.shoulder && !b.seen.hip)) {
       this.readySince = null;
       return this.hint('none', '我还没看到你。把手机立稳，退后两三步。', t);
@@ -317,7 +321,10 @@ class BridgeCoach {
     else if (c.topAt - c.t0 < 1500) issue = 'fast';
     else if (c.topMs < 1500) issue = 'noHold';
     const ok = c.counted && (issue == null || issue === 'noHold');
-    this.reps.push({ ok, counted: c.counted, issue, peak: c.peak, dur: (t - c.t0) / 1000 });
+    this.reps.push({
+      ok, counted: c.counted, issue, peak: c.peak, dur: (t - c.t0) / 1000,
+      topMs: Math.round(c.topMs), reach: c.topAt == null ? null : Math.round(c.topAt - c.t0), knee: c.knee == null ? null : Math.round(c.knee),
+    });
     const n = this.reps.length;
     this.atTop = false;
 
@@ -504,18 +511,39 @@ function loadModel() {
     .catch((e) => { landmarkerPromise = null; throw e; }));
 }
 
+/** 打开摄像头，并尽量用最广的视角 */
+async function openCamera(facing) {
+  const size = { width: { ideal: 1280 }, height: { ideal: 720 } };
+  const open = (video) => navigator.mediaDevices.getUserMedia({ audio: false, video });
+  let stream = await open({ facingMode: facing, ...size });
+  try {
+    if (facing === 'environment') {
+      // 后置有超广角镜头的手机：有些浏览器会把它单独列出来，列出来就换过去
+      const devs = await navigator.mediaDevices.enumerateDevices();
+      const wide = devs.find((d) => d.kind === 'videoinput' && /ultra|超广角/i.test(d.label) && !/front|前置/i.test(d.label));
+      if (wide && wide.deviceId !== stream.getVideoTracks()[0].getSettings().deviceId) {
+        stream.getTracks().forEach((tr) => tr.stop());
+        try { stream = await open({ deviceId: { exact: wide.deviceId }, ...size }); }
+        catch { stream = await open({ facingMode: facing, ...size }); }
+      }
+    }
+    // 支持变焦的摄像头：拉到最远（最广）
+    const track = stream.getVideoTracks()[0];
+    const zoom = track.getCapabilities?.().zoom;
+    if (zoom && zoom.min < (track.getSettings().zoom ?? Infinity)) await track.applyConstraints({ advanced: [{ zoom: zoom.min }] });
+  } catch (e) { console.warn('广角设置没成功，用默认视角', e); }
+  return stream;
+}
+
 class CameraSource {
   constructor(facing = 'user') { this.facing = facing; this.raf = 0; this.stream = null; }
-  async start(onFrame, onDraw) {
+  async start(onFrame, onDraw, onResize) {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error('这个地址打不开摄像头。手机上请用 https:// 开头的地址访问。');
     }
     const [landmarker, stream] = await Promise.all([
       loadModel(),
-      navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: this.facing, width: { ideal: 720 }, height: { ideal: 1280 } },
-      }).catch((e) => { debugNote('打开摄像头', e); throw e; }),
+      openCamera(this.facing).catch((e) => { debugNote('打开摄像头', e); throw e; }),
     ]);
     this.stream = stream;
     setLoadStatus('正在打开摄像头画面…');
@@ -523,10 +551,15 @@ class CameraSource {
     video.srcObject = stream;
     try { await withTimeout(video.play(), 10000, '摄像头画面没有出来。请刷新页面再试一次。'); }
     catch (e) { debugNote('播放摄像头画面', e); throw e; }
-    const w = video.videoWidth, h = video.videoHeight;
+    let w = video.videoWidth, h = video.videoHeight;
     let lastDetect = 0, lastVideoTime = -1, lms = null, shown = null, lastDraw = 0;
     const loop = () => {
       const t = performance.now();
+      // 手机转了方向，画面的宽高会对调：跟着更新
+      if (video.videoWidth && (video.videoWidth !== w || video.videoHeight !== h)) {
+        w = video.videoWidth; h = video.videoHeight; lms = null; shown = null;
+        onResize?.(w, h);
+      }
       // 每秒最多识别约 15 次，普拉提动作慢，够用也省电
       if (t - lastDetect >= 66 && video.currentTime !== lastVideoTime && video.readyState >= 2) {
         lastDetect = t; lastVideoTime = video.currentTime;
@@ -587,9 +620,10 @@ function drawSkeleton(ctx, lms, w, state) {
 }
 
 // ---------- 首页的动作示范小动画（发力部位高亮） ----------
-function startHomeFigure() {
-  const cv = $('demoFig'), ctx = cv.getContext('2d');
-  const css = getComputedStyle($('home'));
+function startFigure(cvId, hostId) {
+  const host = $(hostId);
+  const cv = $(cvId), ctx = cv.getContext('2d');
+  const css = getComputedStyle(host);
   const rgb = (name) => css.getPropertyValue(name).trim();
   let BODY, HOT, MAT, W;
   const readColors = () => {
@@ -603,7 +637,7 @@ function startHomeFigure() {
   const UP = 2.4, HOLD = 2.0, DOWN = 2.6, REST = 1.6, CYCLE = UP + HOLD + DOWN + REST;
   let glow = 0, last = 0;
   const frame = (now) => {
-    if (!$('home').hidden && !document.hidden) {
+    if (!host.hidden && !document.hidden) {
       const cyc = (now / 1000) % CYCLE;
       let p = cyc < UP ? io(cyc / UP) : cyc < UP + HOLD ? 1 : cyc < UP + HOLD + DOWN ? 1 - io((cyc - UP - HOLD) / DOWN) : 0;
       if (REDUCED) p = 1; // 减弱动效：停在顶端姿势
@@ -611,7 +645,7 @@ function startHomeFigure() {
       const holdPulse = cyc >= UP && cyc < UP + HOLD ? 0.08 * Math.sin(((cyc - UP) / HOLD) * Math.PI * 2) : 0;
       const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
       glow += (clamp(p + holdPulse, 0, 1) - glow) * (REDUCED ? 1 : 1 - Math.exp(-dt * 4));
-      $('home').style.setProperty('--breath', glow.toFixed(3));
+      host.style.setProperty('--breath', glow.toFixed(3));
 
       const L = demoPose(p), g = (k) => L[P[k]];
       const S = g('lSh'), H = g('lHip'), K = g('lKn');
@@ -651,6 +685,9 @@ function startHomeFigure() {
 }
 
 // ---------- 页面流程 ----------
+const INTRO_TEXT = '桥式。先看一遍动作。仰卧，屈膝，双脚踩地，与髋同宽，手臂放在身体两侧。'
+  + '呼气，夹紧臀部，把骨盆一节一节卷离垫子，直到肩、髋、膝成一条直线。'
+  + '顶端吸气，停住。再呼气，一节一节慢慢放下。看明白了，就点开始。';
 const App = {
   mode: 'camera',
   facing: 'user',
@@ -664,7 +701,7 @@ const App = {
 
   /** 切换页面。from = 触发切换的按钮：进入跟练时，深色画面从这个按钮的位置展开 */
   show(id, from) {
-    const all = ['home', 'stageScreen', 'summary'].map($);
+    const all = ['home', 'intro', 'stageScreen', 'summary'].map($);
     const next = $(id);
     const cur = all.find((el) => !el.hidden && el !== next);
     clearTimeout(this.showTimer);
@@ -696,6 +733,14 @@ const App = {
     }, kind === 'enter-reveal' ? 620 : kind === 'enter-rise' ? 460 : 240);
   },
 
+  /** 开始前的动作讲解：放示范动画，念一遍要领 */
+  intro() {
+    Voice.unlock();
+    this.phase = 'intro';
+    this.show('intro');
+    Voice.say(INTRO_TEXT, 2);
+  },
+
   fitView() {
     const st = $('stage').getBoundingClientRect();
     const { w, h } = this.size;
@@ -723,11 +768,14 @@ const App = {
     this.guide = new SetupGuide((rest) => this.beginWorkout(rest));
     this.coach = null;
     try {
-      const info = await this.source.start((lms, t) => this.onFrame(lms, t), (lms) => this.draw(lms));
-      this.size = { w: info.w, h: info.h };
-      const cv = $('overlay'); cv.width = info.w; cv.height = info.h;
+      const resize = (w, h) => {
+        this.size = { w, h };
+        const cv = $('overlay'); cv.width = w; cv.height = h;
+        this.fitView();
+      };
+      const info = await this.source.start((lms, t) => this.onFrame(lms, t), (lms) => this.draw(lms), resize);
       $('view').classList.toggle('mirror', info.mirror);
-      this.fitView();
+      resize(info.w, info.h);
       $('loading').hidden = true;
       this.phase = 'setup';
       try { this.wake = await navigator.wakeLock?.request('screen'); } catch { /* 没有也不影响 */ }
@@ -795,6 +843,14 @@ const App = {
   finish() {
     if (this.phase === 'done') return;
     const s = this.coach ? this.coach.summary(performance.now()) : null;
+    this.lastRun = s && {
+      at: new Date().toISOString(), mode: this.mode, facing: this.facing, video: this.size,
+      screen: [innerWidth, innerHeight], rest: Math.round(this.coach.rest), startThr: Math.round(this.coach.startThr),
+      topAngle: TOP_ANGLE, tempo: TEMPO, good: s.good, attempts: s.attempts, seconds: Math.round(s.seconds),
+      reps: s.reps.map((r) => ({ ...r, peak: Math.round(r.peak), dur: Math.round(r.dur * 10) / 10 })),
+      ua: navigator.userAgent,
+    };
+    $('btnCopy').textContent = '复制本次数据';
     this.phase = 'done';
     setTimeout(() => {
       this.source?.stop(); this.source = null;
@@ -871,7 +927,22 @@ $('btnTheme').onclick = () => {
   try { localStorage.setItem('homeTheme', darkHome ? 'dark' : 'light'); } catch { /* 忽略 */ }
 };
 
-$('btnStart').onclick = () => App.start('camera', $('btnStart'));
+$('btnStart').onclick = () => App.intro();
+$('btnIntroBack').onclick = () => App.home();
+$('btnReplay').onclick = () => Voice.say(INTRO_TEXT, 2);
+$('btnIntroGo').onclick = () => { Voice.stop(); App.start('camera', $('btnIntroGo')); };
+$('btnCopy').onclick = async () => {
+  const text = JSON.stringify(App.lastRun || { note: '没有数据' });
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch { /* 下面用老办法再试 */ }
+  if (!ok) {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { ok = document.execCommand('copy'); } catch { /* 都不行就算了 */ }
+    ta.remove();
+  }
+  $('btnCopy').textContent = ok ? '已复制，可以粘贴发出去' : '复制失败';
+};
 $('btnDemo').onclick = () => App.start('demo', $('btnDemo'));
 $('btnBack').onclick = () => App.home();
 $('btnHome').onclick = () => App.home();
@@ -880,8 +951,10 @@ $('btnEnd').onclick = () => App.finish();
 $('btnForce').onclick = () => App.beginWorkout(130);
 $('btnFlip').onclick = () => { App.facing = App.facing === 'user' ? 'environment' : 'user'; App.start('camera'); };
 addEventListener('resize', () => App.phase !== 'home' && App.fitView());
+addEventListener('orientationchange', () => setTimeout(() => App.phase !== 'home' && App.fitView(), 300));
 
-startHomeFigure();
+startFigure('demoFig', 'home');
+startFigure('introFig', 'intro');
 window.__app = App;
 if (!new URLSearchParams(location.search).has('demo')) setTimeout(() => loadModel().catch(() => {}), 1200); // 方便调试
 window.__test = { BridgeCoach, SetupGuide, DemoSource, demoPose, readBody };

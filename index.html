@@ -61,7 +61,7 @@ button:focus-visible { outline: 3px solid var(--teal-500); outline-offset: 3px; 
   background: var(--pink-50);
   overflow: hidden;
 }
-@media (min-width: 520px) {
+@media (min-width: 520px) and (min-height: 520px) {
   #phone {
     width: 390px;
     height: min(844px, 96dvh);
@@ -308,6 +308,48 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
 #home.dark .ic-sun { opacity: 1; transform: none; }
 #home.dark .ic-moon { opacity: 0; transform: rotate(90deg) scale(.5); }
 
+/* ================= 动作讲解页 ================= */
+#intro {
+  --art-bg: linear-gradient(180deg, rgba(237,250,247,.75), rgba(253,228,238,.55));
+  --fig-body: 124,111,126; --fig-hot: 232,120,159; --fig-mat: 124,111,126; --fig-w: 7;
+  background: var(--pink-50); gap: 16px; overflow-y: auto;
+  padding: max(14px, env(safe-area-inset-top)) 22px max(18px, env(safe-area-inset-bottom));
+}
+.intro-top { display: flex; align-items: center; justify-content: space-between; margin: 0 -6px; }
+#intro .btn-link { color: var(--ink-soft); padding: 0 6px; }
+#intro h1 { font-size: 30px; letter-spacing: .12em; }
+#intro .art { padding: 22px 12px 18px; }
+.muscles { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); }
+.muscles b { font-weight: 500; padding: 6px 13px; border-radius: 999px; background: var(--pink-100); color: var(--ink); }
+.steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; font-size: 16px; line-height: 1.55; }
+.steps li { display: grid; grid-template-columns: 20px 1fr; gap: 8px; }
+.steps i { font-style: normal; font-family: var(--font-num); font-weight: 700; color: var(--teal-700); }
+.tip { margin: 0; font-size: 13px; line-height: 1.65; color: var(--ink-soft); background: var(--teal-50); padding: 12px 14px; border-radius: var(--r-md); }
+#intro .btn-primary { margin-top: auto; flex: none; }
+
+/* ================= 手机横放 =================
+   跟练时手机横着立：人躺着是横的，横画面更容易拍到全身，需要退的距离更短 */
+@media (orientation: landscape) and (max-height: 520px) {
+  .top { padding: max(10px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 18px max(14px, env(safe-area-inset-left)); }
+  .bottom { padding: 26px max(16px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); gap: 8px; }
+  #setupPanel { display: grid; grid-template-columns: 1fr auto; column-gap: 14px; align-items: end; }
+  #setupPanel .status { font-size: 17px; }
+  #setupPanel .status, #setupPanel .hold, #setupPanel .parts { grid-column: 1; }
+  #setupPanel #btnForce { grid-column: 2; grid-row: 1 / span 3; min-height: 46px; font-size: 15px; margin-top: 0 !important; }
+  .count #repNow { font-size: 64px; }
+  .count #repAll { font-size: 22px; }
+  .phase { gap: 5px; }
+  .phase #phaseText { font-size: 19px; }
+  #toast { top: 17%; left: 20%; right: 20%; font-size: 18px; padding: 11px 16px; }
+  #home, #intro { overflow-y: auto; }
+  .home-mid { flex: none; padding-bottom: 0; gap: 10px; margin-top: 6px; }
+  .art, #intro .art { align-self: center; padding: 8px 20px; }
+  .art canvas { width: auto; height: 118px; }
+  .go { min-height: 58px; font-size: 22px; align-self: center; min-width: 320px; margin-top: 0; }
+  #home .btn-link { margin-top: -4px; }
+  #intro .btn-primary { margin-top: 0; }
+}
+
 /* 减弱动效：去掉位移和展开，保留淡入和颜色变化 */
 @media (prefers-reduced-motion: reduce) {
   .enter-reveal, .enter-rise, .enter-hud { animation: fade .2s ease-out both; }
@@ -347,6 +389,24 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
       <button class="go" id="btnStart">开始跟练</button>
       <button class="btn btn-link" id="btnDemo">先看演示</button>
     </div>
+  </section>
+
+  <!-- 动作讲解：开始前先看一遍动作、听一遍要领 -->
+  <section class="screen" id="intro" hidden>
+    <div class="intro-top">
+      <button class="btn btn-link" id="btnIntroBack" aria-label="返回">← 返回</button>
+      <button class="btn btn-link" id="btnReplay">再讲一遍</button>
+    </div>
+    <h1>桥式</h1>
+    <div class="art"><canvas id="introFig" width="640" height="300" aria-label="桥式动作示范动画"></canvas></div>
+    <div class="muscles"><span>练到</span><b>臀部</b><b>大腿后侧</b><b>核心</b></div>
+    <ol class="steps">
+      <li><i>1</i><span>仰卧，屈膝，双脚踩地，与髋同宽，手臂放在身体两侧。</span></li>
+      <li><i>2</i><span>呼气，夹紧臀部，把骨盆一节一节卷离垫子，直到肩、髋、膝成一条直线。</span></li>
+      <li><i>3</i><span>顶端吸气，停住；再呼气，一节一节慢慢放下。</span></li>
+    </ol>
+    <p class="tip">跟练时把手机横过来立稳，侧面对着你，要能拍到从头到脚。请先关掉手机的竖屏锁定。</p>
+    <button class="btn btn-primary" id="btnIntroGo">我会了，开始</button>
   </section>
 
   <!-- 摆放 + 跟练 -->
@@ -417,6 +477,7 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
     <div class="btn-row">
       <button class="btn btn-primary" id="btnAgain">再练一组</button>
       <button class="btn btn-ghost" id="btnHome">回首页</button>
+      <button class="btn btn-link" id="btnCopy">复制本次数据</button>
     </div>
   </section>
 
