@@ -43,6 +43,7 @@ export class Viewer {
     const mat = new T.Mesh(new T.BoxGeometry(1.95, 0.03, 0.7), new T.MeshToonMaterial({ color: 0xc9ecf0, gradientMap: this.ramp }));
     mat.position.set(0.42, -0.015, 0);
     this.scene.add(mat);
+    this.mat = mat;
     this.cyl = new T.CylinderGeometry(1, 1, 1, 20, 1, true);
     this.sph = new T.SphereGeometry(1, 24, 16);
     // 头发：一块盖住头顶、后脑勺和两侧的“帽子”形色块，前面留出脸
@@ -131,6 +132,12 @@ export class Viewer {
     this.scene.add(group);
     this.figs[key] = f;
     return f;
+  }
+
+  /** 镜头和垫子对准某个动作的活动范围。mat = [垫子拉长几倍, 垫子中心的 x] */
+  frame({ x = 0.4, dist = 2.55, mat = [1, 0.42] } = {}) {
+    this.target.x = x; this.dist = dist;
+    this.mat.scale.x = mat[0]; this.mat.position.x = mat[1];
   }
 
   show(key, visible) { if (this.figs[key]) this.figs[key].group.visible = visible; }

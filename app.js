@@ -409,7 +409,7 @@ const EXERCISES = [
       noHold: '伸直后先停住，等听到“收回”再往回滑。',
     },
     perfect: '伸腿和收回的时候，试着让骨盆一点都不晃。',
-    pose: heelslidePose, sag: false, fit: 0.8, hot: ['waist', 'thigh'], arrow: { at: 'An', dir: 'out' }, cam: { x: 0.62, dist: 3.0 },
+    pose: heelslidePose, sag: false, fit: 0.8, hot: ['waist', 'thigh'], arrow: { at: 'An', dir: 'out' }, cam: { x: 0.62, dist: 3.0, mat: [1.24, 0.63] },   // 腿伸直后比较长：垫子加长，镜头退远
     idealTop: idealHeelslide,
   },
 ];
@@ -986,7 +986,7 @@ function idealHeelslide(R) {
 /** 标准动作在每段口令里做到几成 */
 const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg === 'hold' ? 1 : seg === 'down' ? 1 - ease(clamp(sec / 3.4, 0, 1)) : 0);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=16'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=17'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -1005,7 +1005,7 @@ const Intro3D = {
             // 和平面示范同一个节奏：抬起 2.4 秒，停 2 秒，放下 2.6 秒，休息 1.6 秒
             const c = (now / 1000) % 8.6;
             const p = REDUCED ? 1 : c < 2.4 ? io(c / 2.4) : c < 4.4 ? 1 : c < 7 ? 1 - io((c - 4.4) / 2.6) : 0;
-            if (this.exId !== EX.id) { this.exId = EX.id; v.target.x = EX.cam.x; v.dist = EX.cam.dist; }   // 换了动作：镜头对准新动作的范围
+            if (this.exId !== EX.id) { this.exId = EX.id; v.frame(EX.cam); }   // 换了动作：镜头对准新动作的范围
             v.arrowAt(stdJoints(p), REDUCED ? null : c, EX.arrow);
             v.pose('std', stdJoints(p), p, !REDUCED && c >= 1 && c < 5.9, EX.hot);   // 开始抬起 1 秒后做用力的表情，到开始放下 1.5 秒后恢复
           };
@@ -1053,7 +1053,7 @@ const Cmp = {
         v.onTick = (now) => this.tick(now);
         v.start();
       }
-      this.viewer.target.x = EX.cam.x; this.viewer.dist = EX.cam.dist;
+      this.viewer.frame(EX.cam);
     } catch (e) { debugNote('3D 对比', e); return; }
     const box = $('cmpReps');
     box.innerHTML = '';
@@ -1378,7 +1378,7 @@ const App = {
     $('sumTime').textContent = `${Math.floor(s.seconds / 60)}:${String(Math.round(s.seconds % 60)).padStart(2, '0')}`;
     $('sumAngle').textContent = s.avgPeak ? Math.round(s.avgPeak) + '°' : '–';
     $('sumAngleName').textContent = EX.angleName;
-    $('sumHold').textContent = s.avgHold ? s.avgHold.toFixed(1) + ' 秒' : '–';
+    $('sumHold').innerHTML = s.avgHold ? `${s.avgHold.toFixed(1)}<small>秒</small>` : '–';
     // 柱状图：每一次做到了到位线的几成
     const bars = $('sumBars');
     bars.innerHTML = '';

@@ -170,17 +170,18 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 .stat { background: #fff; border-radius: var(--r-md); padding: 14px 12px; border: 1.5px solid var(--line); }
 .stat b { display: block; font-family: var(--font-num); font-size: 24px; font-variant-numeric: tabular-nums; }
 .stat span { font-size: 12px; color: var(--ink-soft); }
+.stat b small { font-family: var(--font); font-size: 13px; font-weight: 500; margin-left: 3px; color: var(--ink-soft); }
 /* 每一次做到哪儿：柱子越高做得越到位，虚线是到位线 */
 .chart { background: #fff; border: 1.5px solid var(--line); border-radius: var(--r-md); padding: 20px 14px 12px; }
 .plot { position: relative; height: 128px; }
-.bars { height: 100%; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; }
-.bar { height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 6px; }
+.bars { height: 100%; margin-right: 48px; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; }
+.bar { height: 100%; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 6px; }
 .bar i { width: 100%; max-width: 20px; height: calc(var(--h) * (100% - 24px)); border-radius: 7px 7px 3px 3px; background: var(--teal-300); transform-origin: 50% 100%; transition: box-shadow .2s; }
 .bar.bad i { background: var(--pink-500); }
 .bar span { height: 18px; min-width: 18px; padding: 0 4px; border-radius: 9px; display: grid; place-items: center; font-family: var(--font-num); font-size: 12px; font-weight: 700; color: var(--ink-soft); font-variant-numeric: tabular-nums; transition: background-color .2s, color .2s; }
 .bar.sel span { background: var(--ink); color: #fff; }
 .goal { position: absolute; left: 0; right: 0; bottom: calc(24px + .8 * (100% - 24px)); border-top: 1.5px dashed rgba(115, 102, 118, .5); pointer-events: none; }
-.goal em { position: absolute; right: 0; bottom: 3px; font-style: normal; font-size: 11px; letter-spacing: .06em; color: var(--ink-soft); }
+.goal em { position: absolute; right: 0; top: -9px; padding-left: 7px; background: #fff; font-style: normal; font-size: 11px; line-height: 16px; letter-spacing: .06em; color: var(--ink-soft); }
 .rep-note { margin: 10px 0 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 14px; line-height: 1.55; color: var(--ink); min-height: 2.6em; }
 .rep-note b { font-weight: 700; }
 .rep-note b.bad { color: var(--pink-600); }
@@ -557,7 +558,7 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
     <div class="stats">
       <div class="stat"><b id="sumTime">0:00</b><span>用时</span></div>
       <div class="stat"><b id="sumAngle">0°</b><span id="sumAngleName">平均抬起角度</span></div>
-      <div class="stat"><b id="sumHold">–</b><span>到位后平均停留</span></div>
+      <div class="stat"><b id="sumHold">–</b><span>到位后停留</span></div>
     </div>
     <div class="note" id="sumNote"></div>
     <div class="section" id="cmpBox" hidden>
@@ -603,6 +604,6 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
   setTimeout(function () { if (!window.__app) report('app.js 4 秒内没有跑起来'); else new Image().src = './__log?' + encodeURIComponent('OK app started | ' + navigator.userAgent); }, 4000);
 })();
 </script>
-<script type="module" src="./app.js?v=16"></script>
+<script type="module" src="./app.js?v=17"></script>
 </body>
 </html>
