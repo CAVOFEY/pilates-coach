@@ -8,17 +8,18 @@ export async function load3D() {
   return THREE;
 }
 
-// [起点, 终点, 起点粗细, 终点粗细（半径，米）, 用哪种颜色, 是不是发力部位]
+// [起点, 终点, 起点粗细, 终点粗细（半径，米）, 用哪种颜色, 属于哪个发力部位（waist 腰 / hip 臀 / thigh 大腿；false = 不会亮）]
 // 两头粗细不同 = 一头粗一头细的锥形，关节处不会鼓出一个球
 const BONES = [
   // 胸廓（上衣）比腰宽一圈；腰到髋是高腰瑜伽裤
-  ['midSh', 'spine', 0.128, 0.134, 'top', false], ['spine', 'midHip', 0.106, 0.112, 'pants', true],
-  ['lSh', 'rSh', 0.078, 0.078, 'top', false], ['lHip', 'rHip', 0.104, 0.104, 'pants', true],
+  ['midSh', 'spine', 0.128, 0.134, 'top', false], ['spine', 'midHip', 0.106, 0.112, 'pants', 'waist'],
+  ['lSh', 'rSh', 0.078, 0.078, 'top', false], ['lHip', 'rHip', 0.104, 0.104, 'pants', 'hip'],
   ['lSh', 'lEl', 0.052, 0.046, 'skin', false], ['lEl', 'lWr', 0.046, 0.041, 'skin', false],
   ['rSh', 'rEl', 0.052, 0.046, 'skin', false], ['rEl', 'rWr', 0.046, 0.041, 'skin', false],
-  ['lHip', 'lKn', 0.088, 0.064, 'pants', true], ['lKn', 'lAn', 0.064, 0.047, 'pants', false], ['lAn', 'lToe', 0.05, 0.05, 'skin', false],
-  ['rHip', 'rKn', 0.088, 0.064, 'pants', true], ['rKn', 'rAn', 0.064, 0.047, 'pants', false], ['rAn', 'rToe', 0.05, 0.05, 'skin', false],
+  ['lHip', 'lKn', 0.088, 0.064, 'pants', 'thigh'], ['lKn', 'lAn', 0.064, 0.047, 'pants', false], ['lAn', 'lToe', 0.05, 0.05, 'skin', false],
+  ['rHip', 'rKn', 0.088, 0.064, 'pants', 'thigh'], ['rKn', 'rAn', 0.064, 0.047, 'pants', false], ['rAn', 'rToe', 0.05, 0.05, 'skin', false],
 ];
+const HOT_ALL = ['waist', 'hip', 'thigh'];
 const HEAD_R = 0.168, HAND_R = 0.058, BUN_R = 0.07, EDGE = 0.011;
 export const PALETTE = { skin: 0xffe3d6, top: 0xf9c9dc, pants: 0x7d6873, hair: 0x513c4b, hot: 0xe8789f, edge: 0x45353f };
 
@@ -106,18 +107,18 @@ export class Viewer {
     const pal = typeof colors === 'number' ? { skin: colors, top: colors, pants: colors, hair: colors } : colors;
     const mk = (hex) => new T.MeshToonMaterial({ color: hex, gradientMap: this.ramp, transparent: !solid, opacity, depthWrite: solid });
     const mats = { skin: mk(pal.skin), top: mk(pal.top), pants: mk(pal.pants), hair: mk(pal.hair) };
-    const glow = { top: mk(pal.top), pants: mk(pal.pants) };       // 发力部位单独一份材质，才能单独变色
+    const glow = { waist: mk(pal.pants), hip: mk(pal.pants), thigh: mk(pal.pants) };       // 发力部位单独一份材质，才能单独变色
     const edge = solid ? new T.MeshBasicMaterial({ color: PALETTE.edge, side: T.BackSide }) : null;
     const group = new T.Group();
     const add = (geo, m) => { const mesh = new T.Mesh(geo, m); group.add(mesh); return mesh; };
     // 每个零件都配一个稍大一圈、只画背面的深色壳，看起来就是描边
     const pair = (geo, m) => ({ fill: add(geo, m), line: edge ? add(geo, edge) : null });
     const parts = BONES.map(([a, b, r, rb, c, isHot]) => {
-      const m = isHot ? glow[c] : mats[c];
+      const m = isHot ? glow[isHot] : mats[c];
       return { a, b, r, rb, bone: pair(this._cone(rb / r), m), ja: pair(this.sph, m), jb: pair(this.sph, m) };
     });
     const f = {
-      group, parts, glow, base: { top: new T.Color(pal.top), pants: new T.Color(pal.pants) }, hot: new T.Color(hot),
+      group, parts, glow, base: new T.Color(pal.pants), hot: new T.Color(hot),
       head: pair(this.sph, mats.skin), hair: pair(this.hairCap, mats.hair), bun: pair(this.sph, mats.hair),
       hands: [pair(this.sph, mats.skin), pair(this.sph, mats.skin)],
       face: solid ? {
@@ -134,8 +135,8 @@ export class Viewer {
 
   show(key, visible) { if (this.figs[key]) this.figs[key].group.visible = visible; }
 
-  /** 把小人摆成给定的关节位置。glow 0~1 = 发力部位亮多少；effort = 是不是正在最用力（表情变成 > <） */
-  pose(key, J, glow = 0, effort = glow > 0.9) {
+  /** 把小人摆成给定的关节位置。glow 0~1 = 发力部位亮多少；effort = 是不是正在最用力（表情变成 > <）；hot = 这个动作哪些部位发力 */
+  pose(key, J, glow = 0, effort = glow > 0.9, hot = HOT_ALL) {
     const f = this.figs[key];
     if (!f || !J) return;
     const T = THREE;
@@ -204,25 +205,36 @@ export class Viewer {
         m.scale.setScalar(0.034);
       });
     }
-    for (const k of ['top', 'pants']) {
-      f.glow[k].color.copy(f.base[k]).lerp(f.hot, glow);
-    }
+    for (const k of HOT_ALL) f.glow[k].color.copy(f.base).lerp(f.hot, hot.includes(k) ? glow : 0);
   }
 
-  /** 髋旁边的向上箭头。t = 开始抬起后过了几秒；不在抬起的开头就传 null（箭头隐藏） */
-  arrowAt(J, t) {
+  /**
+   * 提示箭头：告诉大家这个动作从哪儿、往哪个方向发力。
+   * t = 动作开始后过了几秒，不在开头就传 null（箭头隐藏）；
+   * at = 贴着哪个关节（Hip 髋 / Kn 膝 / An 脚踝）；dir = up 往上，out 贴着垫子往脚的方向
+   */
+  arrowAt(J, t, { at = 'Hip', dir = 'up' } = {}) {
     const on = !!J && t != null && t >= 0 && t < 1.5;
     for (const g of this.arrows) g.visible = on;
     if (!on) return;
+    const T = THREE;
     const p = (t % 0.75) / 0.75;                       // 连着“biu”两下，每下 0.75 秒
     const rise = 1 - (1 - p) ** 3;                     // 先快后慢
     this.arrowMat.opacity = p < 0.12 ? p / 0.12 : 1 - ((p - 0.12) / 0.88) ** 2;
     const k = 0.75 + 0.35 * Math.min(1, p / 0.18);
-    const hx = (J.lHip[0] + J.rHip[0]) / 2, hy = (J.lHip[1] + J.rHip[1]) / 2, hz = (J.lHip[2] + J.rHip[2]) / 2;
-    const dz = J.lHip[2] - J.rHip[2], dx = J.lHip[0] - J.rHip[0], w = Math.hypot(dx, dz) || 1;
+    const L = J['l' + at], R = J['r' + at];
+    const cx = (L[0] + R[0]) / 2, cy = (L[1] + R[1]) / 2, cz = (L[2] + R[2]) / 2;
+    const dz = L[2] - R[2], dx = L[0] - R[0], w = Math.hypot(dx, dz) || 1;
+    // 箭头指向：往上，或者从髋指向脚（贴着地面）
+    const way = this._way ??= new T.Vector3();
+    if (dir === 'out') way.set((J.lAn[0] + J.rAn[0] - J.lHip[0] - J.rHip[0]) / 2, 0, (J.lAn[2] + J.rAn[2] - J.lHip[2] - J.rHip[2]) / 2).normalize();
+    else way.set(0, 1, 0);
+    const UP = this._up ??= new T.Vector3(0, 1, 0);
     this.arrows.forEach((g, i) => {
       const s = i ? -1 : 1, off = w / 2 + 0.2;
-      g.position.set(hx + (dx / w) * off * s, Math.max(0.02, hy - 0.16) + rise * 0.3, hz + (dz / w) * off * s);
+      g.position.set(cx + (dx / w) * off * s, dir === 'out' ? cy + 0.04 : Math.max(0.02, cy - 0.16), cz + (dz / w) * off * s);
+      g.position.addScaledVector(way, rise * 0.3);
+      g.quaternion.setFromUnitVectors(UP, way);
       g.scale.setScalar(k);
     });
   }
