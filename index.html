@@ -206,7 +206,8 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 .lg::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
 .lg.you::before { background: var(--pink-500); }
 .lg.std::before { background: var(--teal-300); }
-#cmpReps .rep { cursor: pointer; }
+#cmpReps { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 5px; }
+#cmpReps .rep { cursor: pointer; width: auto; height: auto; aspect-ratio: 1; }
 #cmpReps .rep.sel { box-shadow: 0 0 0 2px var(--ink); }
 
 /* ================= 首页 ================= */
@@ -604,6 +605,6 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
   setTimeout(function () { if (!window.__app) report('app.js 4 秒内没有跑起来'); else new Image().src = './__log?' + encodeURIComponent('OK app started | ' + navigator.userAgent); }, 4000);
 })();
 </script>
-<script type="module" src="./app.js?v=17"></script>
+<script type="module" src="./app.js?v=18"></script>
 </body>
 </html>

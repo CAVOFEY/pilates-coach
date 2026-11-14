@@ -1,4 +1,4 @@
-// 普拉提 AI 教练 · 桥式验证版
+// 普拉提 AI 教练 · 三个仰卧屈膝的动作：桥式、屈膝抬腿、脚跟滑动
 // 流程：首页 → 摆放（看到全身、躺好）→ 跟练（计数 + 语音纠正）→ 小结
 // 骨架识别用 Google MediaPipe Pose（开源模型，本地运行）；动作标准判定和教练逻辑是本项目自己写的。
 
@@ -455,7 +455,7 @@ class Coach {
       if (a > c.peak) { c.peak = a; c.knee = b.kneeAngle; }
       if (this.atTop) {
         if (c.topAt == null) c.topAt = t;
-        if (c.lastT != null) c.topMs += Math.min(t - c.lastT, 250);
+        if (c.lastT != null) c.topMs += Math.min(t - c.lastT, 600);   // 手机识别慢、帧数低的时候，也不会少算停留时间
         if (!c.counted && c.topMs > 250) { c.counted = true; this.count++; }
       }
       this.ex.watch?.(b, c);
@@ -630,7 +630,7 @@ class DemoSource {
     ctx.fillStyle = 'rgba(249,201,220,.28)';
     ctx.beginPath(); ctx.roundRect(30, 474, 300, 12, 6); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('演示模式 · 这是模拟的人，没有使用摄像头', DEMO_W / 2, 150);
+    ctx.fillText('演示模式 · 这是模拟的人，没有使用摄像头', DEMO_W / 2, 300);
   }
   stop() { cancelAnimationFrame(this.raf); }
 }
@@ -986,7 +986,7 @@ function idealHeelslide(R) {
 /** 标准动作在每段口令里做到几成 */
 const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg === 'hold' ? 1 : seg === 'down' ? 1 - ease(clamp(sec / 3.4, 0, 1)) : 0);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=17'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=18'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
