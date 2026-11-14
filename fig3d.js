@@ -1,4 +1,4 @@
-// 3D 小人：用圆柱和球搭出来的人形，可以用手指拖着绕一圈看。
+// 3D 小人：卡通比例（大头、圆手圆脚、约五头身），三渲二画风（色块分层 + 描边）。
 // 小人不靠骨骼动画，而是直接吃“关节位置”——所以标准示范和摄像头识别出的真人动作都能驱动它。
 // 关节格式：{ head, spine, lSh, rSh, lEl, rEl, lWr, rWr, lHip, rHip, lKn, rKn, lAn, rAn, lToe, rToe }，每个是 [x, y, z]（米，y 朝上）
 
@@ -8,17 +8,17 @@ export async function load3D() {
   return THREE;
 }
 
-// [起点, 终点, 粗细（半径，米）, 是不是发力部位]
+// [起点, 终点, 粗细（半径，米）, 用哪种颜色, 是不是发力部位]
 const BONES = [
-  ['midSh', 'spine', 0.118, false], ['spine', 'midHip', 0.112, true],
-  ['lSh', 'rSh', 0.062, false], ['lHip', 'rHip', 0.092, true],
-  ['midSh', 'head', 0.046, false],
-  ['lSh', 'lEl', 0.044, false], ['lEl', 'lWr', 0.036, false],
-  ['rSh', 'rEl', 0.044, false], ['rEl', 'rWr', 0.036, false],
-  ['lHip', 'lKn', 0.074, true], ['lKn', 'lAn', 0.05, false], ['lAn', 'lToe', 0.038, false],
-  ['rHip', 'rKn', 0.074, true], ['rKn', 'rAn', 0.05, false], ['rAn', 'rToe', 0.038, false],
+  ['midSh', 'spine', 0.13, 'top', false], ['spine', 'midHip', 0.126, 'top', true],
+  ['lSh', 'rSh', 0.078, 'top', false], ['lHip', 'rHip', 0.108, 'pants', true],
+  ['lSh', 'lEl', 0.052, 'skin', false], ['lEl', 'lWr', 0.047, 'skin', false],
+  ['rSh', 'rEl', 0.052, 'skin', false], ['rEl', 'rWr', 0.047, 'skin', false],
+  ['lHip', 'lKn', 0.09, 'pants', true], ['lKn', 'lAn', 0.068, 'pants', false], ['lAn', 'lToe', 0.054, 'skin', false],
+  ['rHip', 'rKn', 0.09, 'pants', true], ['rKn', 'rAn', 0.068, 'pants', false], ['rAn', 'rToe', 0.054, 'skin', false],
 ];
-const HEAD_R = 0.1;
+const HEAD_R = 0.168, HAND_R = 0.062, BUN_R = 0.078, EDGE = 0.011;
+export const PALETTE = { skin: 0xffe3d6, top: 0xf9c9dc, pants: 0x8fdccf, hair: 0x6b5570, hot: 0xe8789f, edge: 0x5a4660 };
 
 export class Viewer {
   constructor(canvas) {
@@ -28,25 +28,26 @@ export class Viewer {
     this.r.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
     this.scene = new T.Scene();
     this.cam = new T.PerspectiveCamera(30, 2, 0.1, 30);
-    this.scene.add(new T.HemisphereLight(0xffffff, 0xcdb5c4, 1.25));
-    const sun = new T.DirectionalLight(0xffffff, 1.5);
-    sun.position.set(1.2, 3, 2.4);
+    this.scene.add(new T.HemisphereLight(0xffffff, 0xe6d3dd, 1.0));
+    const sun = new T.DirectionalLight(0xffffff, 1.9);
+    sun.position.set(1.0, 3, 2.2);
     this.scene.add(sun);
+    // 三渲二：光照只分三档，不做平滑过渡
+    this.ramp = new T.DataTexture(new Uint8Array([150, 215, 255]), 3, 1, T.RedFormat);
+    this.ramp.minFilter = this.ramp.magFilter = T.NearestFilter;
+    this.ramp.needsUpdate = true;
     // 垫子
-    const mat = new T.Mesh(
-      new T.BoxGeometry(1.95, 0.024, 0.66),
-      new T.MeshStandardMaterial({ color: 0x8fdccf, roughness: 0.95, transparent: true, opacity: 0.5 }),
-    );
-    mat.position.set(0.42, -0.012, 0);
+    const mat = new T.Mesh(new T.BoxGeometry(1.95, 0.03, 0.7), new T.MeshToonMaterial({ color: 0xc9ecf0, gradientMap: this.ramp }));
+    mat.position.set(0.42, -0.015, 0);
     this.scene.add(mat);
-    this.cyl = new T.CylinderGeometry(1, 1, 1, 16, 1, true);
-    this.sph = new T.SphereGeometry(1, 18, 12);
-    this.target = new T.Vector3(0.42, 0.2, 0);
-    this.yaw = 0.55; this.pitch = 0.24; this.dist = 2.45;
+    this.cyl = new T.CylinderGeometry(1, 1, 1, 20, 1, true);
+    this.sph = new T.SphereGeometry(1, 24, 16);
+    this.target = new T.Vector3(0.4, 0.22, 0);
+    this.yaw = 0.55; this.pitch = 0.24; this.dist = 2.55;
     this.auto = true;          // 没人碰之前自己慢慢转
     this.figs = {};
     this.onTick = null;        // 每一帧渲染前调用，用来更新姿势
-    this.raf = 0; this.last = 0; this.w = 0; this.h = 0;
+    this.raf = 0; this.last = 0; this.w = 0; this.h = 0; this.fit = 1;
     this._drag();
   }
 
@@ -68,30 +69,43 @@ export class Viewer {
     c.addEventListener('pointercancel', end);
     c.addEventListener('wheel', (e) => {
       e.preventDefault();
-      this.dist = Math.min(6, Math.max(1.8, this.dist * (e.deltaY > 0 ? 1.08 : 0.92)));
+      this.dist = Math.min(6, Math.max(1.6, this.dist * (e.deltaY > 0 ? 1.08 : 0.92)));
     }, { passive: false });
   }
 
-  /** 新建一个小人。hot = 发力部位亮起来时的颜色；opacity < 1 就是半透明的“影子” */
-  figure(key, { color, hot = color, opacity = 1 }) {
+  /**
+   * 新建一个小人。
+   * colors：{ skin, top, pants, hair }，不给就用默认配色；给一个数字就是整个人一个颜色。
+   * opacity < 1 = 半透明的“影子”（不描边、不画脸）。
+   */
+  figure(key, { colors = PALETTE, hot = PALETTE.hot, opacity = 1 } = {}) {
     const T = THREE;
-    const mk = (hex) => new T.MeshStandardMaterial({
-      color: hex, roughness: 0.62, metalness: 0, transparent: opacity < 1, opacity, depthWrite: opacity >= 1,
-    });
-    const body = mk(color), glow = mk(color);
+    const solid = opacity >= 1;
+    const pal = typeof colors === 'number' ? { skin: colors, top: colors, pants: colors, hair: colors } : colors;
+    const mk = (hex) => new T.MeshToonMaterial({ color: hex, gradientMap: this.ramp, transparent: !solid, opacity, depthWrite: solid });
+    const mats = { skin: mk(pal.skin), top: mk(pal.top), pants: mk(pal.pants), hair: mk(pal.hair) };
+    const glow = { top: mk(pal.top), pants: mk(pal.pants) };       // 发力部位单独一份材质，才能单独变色
+    const edge = solid ? new T.MeshBasicMaterial({ color: PALETTE.edge, side: T.BackSide }) : null;
     const group = new T.Group();
-    const parts = BONES.map(([a, b, r, isHot]) => {
-      const m = isHot ? glow : body;
-      const bone = new T.Mesh(this.cyl, m), ja = new T.Mesh(this.sph, m), jb = new T.Mesh(this.sph, m);
-      group.add(bone, ja, jb);
-      return { a, b, r, bone, ja, jb };
+    const add = (geo, m) => { const mesh = new T.Mesh(geo, m); group.add(mesh); return mesh; };
+    // 每个零件都配一个稍大一圈、只画背面的深色壳，看起来就是描边
+    const pair = (geo, m) => ({ fill: add(geo, m), line: edge ? add(geo, edge) : null });
+    const parts = BONES.map(([a, b, r, c, isHot]) => {
+      const m = isHot ? glow[c] : mats[c];
+      return { a, b, r, bone: pair(this.cyl, m), ja: pair(this.sph, m), jb: pair(this.sph, m) };
     });
-    const head = new T.Mesh(this.sph, body);
-    head.scale.setScalar(HEAD_R);
-    group.add(head);
+    const f = {
+      group, parts, glow, base: { top: new T.Color(pal.top), pants: new T.Color(pal.pants) }, hot: new T.Color(hot),
+      head: pair(this.sph, mats.skin), bun: pair(this.sph, mats.hair),
+      hands: [pair(this.sph, mats.skin), pair(this.sph, mats.skin)],
+      face: solid ? {
+        eyes: [add(this.sph, new T.MeshBasicMaterial({ color: 0x4a3a50 })), add(this.sph, new T.MeshBasicMaterial({ color: 0x4a3a50 }))],
+        blush: [add(this.sph, new T.MeshBasicMaterial({ color: 0xf7a8c0 })), add(this.sph, new T.MeshBasicMaterial({ color: 0xf7a8c0 }))],
+      } : null,
+    };
     this.scene.add(group);
-    this.figs[key] = { group, parts, head, glow, base: new T.Color(color), hot: new T.Color(hot) };
-    return this.figs[key];
+    this.figs[key] = f;
+    return f;
   }
 
   show(key, visible) { if (this.figs[key]) this.figs[key].group.visible = visible; }
@@ -101,23 +115,53 @@ export class Viewer {
     const f = this.figs[key];
     if (!f || !J) return;
     const T = THREE;
+    const v = (i) => (this._v ??= Array.from({ length: 8 }, () => new T.Vector3()))[i];
+    const UP = this._up ??= new T.Vector3(0, 1, 0);
     const mid = (p, q) => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2, (p[2] + q[2]) / 2];
     const all = { ...J, midSh: mid(J.lSh, J.rSh), midHip: mid(J.lHip, J.rHip) };
-    const A = this._a ??= new T.Vector3(), B = this._b ??= new T.Vector3(), D = this._d ??= new T.Vector3();
-    const UP = this._up ??= new T.Vector3(0, 1, 0);
+    const ball = (p, pos, r) => {
+      p.fill.position.copy(pos); p.fill.scale.setScalar(r);
+      if (p.line) { p.line.position.copy(pos); p.line.scale.setScalar(r + EDGE); }
+    };
+    const A = v(0), B = v(1), D = v(2);
     for (const p of f.parts) {
       A.fromArray(all[p.a]); B.fromArray(all[p.b]);
       D.subVectors(B, A);
       const len = D.length() || 1e-4;
-      p.bone.position.addVectors(A, B).multiplyScalar(0.5);
-      p.bone.scale.set(p.r, len, p.r);
-      p.bone.quaternion.setFromUnitVectors(UP, D.divideScalar(len));
-      p.ja.position.copy(A); p.ja.scale.setScalar(p.r);
-      p.jb.position.copy(B); p.jb.scale.setScalar(p.r);
+      D.divideScalar(len);
+      for (const [m, r] of [[p.bone.fill, p.r], [p.bone.line, p.r + EDGE]]) {
+        if (!m) continue;
+        m.position.addVectors(A, B).multiplyScalar(0.5);
+        m.scale.set(r, len, r);
+        m.quaternion.setFromUnitVectors(UP, D);
+      }
+      ball(p.ja, A, p.r); ball(p.jb, B, p.r);
     }
-    f.head.position.fromArray(J.head);
-    f.glow.color.copy(f.base).lerp(f.hot, glow);
-    f.glow.emissive.copy(f.hot).multiplyScalar(glow * 0.35);
+    ball(f.hands[0], A.fromArray(J.lWr), HAND_R);
+    ball(f.hands[1], A.fromArray(J.rWr), HAND_R);
+    // 大头：沿着“肩 → 头”的方向放，离肩一个头的半径多一点
+    const sh = v(3).fromArray(all.midSh), up = v(4).fromArray(J.head).sub(sh);
+    if (up.lengthSq() < 1e-6) up.set(0, 1, 0);
+    up.normalize();
+    const head = v(5).copy(sh).addScaledVector(up, HEAD_R + 0.075);
+    ball(f.head, head, HEAD_R);
+    // 脸朝哪：左右肩的连线和“朝头顶”的方向都垂直的那一面
+    const side = v(6).fromArray(J.lSh).sub(A.fromArray(J.rSh)).normalize();
+    const front = v(7).crossVectors(side, up).normalize();
+    ball(f.bun, A.copy(head).addScaledVector(up, HEAD_R * 0.95).addScaledVector(front, -HEAD_R * 0.25), BUN_R);
+    if (f.face) {
+      f.face.eyes.forEach((m, i) => {
+        m.position.copy(head).addScaledVector(front, HEAD_R * 0.9).addScaledVector(side, (i ? -1 : 1) * HEAD_R * 0.36).addScaledVector(up, HEAD_R * 0.02);
+        m.scale.setScalar(0.021);
+      });
+      f.face.blush.forEach((m, i) => {
+        m.position.copy(head).addScaledVector(front, HEAD_R * 0.74).addScaledVector(side, (i ? -1 : 1) * HEAD_R * 0.6).addScaledVector(up, -HEAD_R * 0.22);
+        m.scale.setScalar(0.034);
+      });
+    }
+    for (const k of ['top', 'pants']) {
+      f.glow[k].color.copy(f.base[k]).lerp(f.hot, glow);
+    }
   }
 
   start() {
@@ -133,7 +177,6 @@ export class Viewer {
         this.r.setSize(w, h, false);
         this.cam.aspect = w / h;
         // 画面越窄，镜头退得越远，保证整个人都在画面里
-        this.cam.fov = 30;
         this.fit = Math.max(1, 1.7 / (w / h));
         this.cam.updateProjectionMatrix();
       }

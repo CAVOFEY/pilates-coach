@@ -818,7 +818,7 @@ function stdJoints(p) {
   const M = { x: S.x + (H.x - S.x) * 0.53, y: S.y + (H.y - S.y) * 0.53 + sag * 0.5 };
   const wide = { Sh: 0.19, El: 0.25, Wr: 0.26, Hip: 0.11, Kn: 0.11, An: 0.11, Toe: 0.12 };
   const J = { head: at({ x: 58, y: 448 }, 0), spine: at(M, 0) };
-  for (const n of SIDE_PARTS) { J['l' + n] = at(g('l' + n), wide[n]); J['r' + n] = at(g('l' + n), -wide[n]); }
+  for (const n of SIDE_PARTS) { J['l' + n] = at(g('l' + n), -wide[n]); J['r' + n] = at(g('l' + n), wide[n]); }
   return J;
 }
 /** 摄像头识别出的 3D 关节（以髋为原点，单位米；模型的 y 朝下、z 朝里，这里翻成 y 朝上、z 朝外） */
@@ -864,7 +864,7 @@ const Intro3D = {
         const m = await get3D();
         if (!this.viewer) {
           const v = this.viewer = new m.Viewer($('intro3d'));
-          v.figure('std', { color: 0xd8cddb, hot: 0xe8789f });
+          v.figure('std');
           const io = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
           v.onTick = (now) => {
             // 和平面示范同一个节奏：抬起 2.4 秒，停 2 秒，放下 2.6 秒，休息 1.6 秒
@@ -911,8 +911,8 @@ const Cmp = {
       if (!this.viewer) {
         const v = this.viewer = new m.Viewer($('cmp3d'));
         v.auto = false; v.yaw = 0.4;
-        v.figure('std', { color: 0x3bb8a6, opacity: 0.36 });
-        v.figure('you', { color: 0xe8789f });
+        v.figure('std', { colors: 0x3bb8a6, opacity: 0.34 });
+        v.figure('you', { colors: { skin: 0xffe3d6, top: 0xf4a9c4, pants: 0xe8789f, hair: 0x6b5570 }, hot: 0xe8789f });
         v.onTick = (now) => this.tick(now);
         v.start();
       }
