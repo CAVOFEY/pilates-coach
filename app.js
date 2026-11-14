@@ -451,6 +451,11 @@ async function fetchBytes(url, label) {
   for (const c of chunks) { out.set(c, o); o += c.length; }
   return out;
 }
+/** 调试用：把被接住的错误也显示在屏幕底部的红框里，带上是哪一步出的 */
+function debugNote(where, e) {
+  console.warn(where, e);
+  window.__report?.(`[${where}] ${e?.name || ''} ${e?.message || e}\n${String(e?.stack || '').split('\n').slice(0, 4).join('\n')}`);
+}
 let landmarkerPromise = null;
 function loadModel() {
   return (landmarkerPromise ??= (async () => {
@@ -458,11 +463,16 @@ function loadModel() {
     const { PoseLandmarker, FilesetResolver } = await import('./vendor/tasks-vision/vision_bundle.mjs');
     const fileset = await FilesetResolver.forVisionTasks('./vendor/tasks-vision/wasm');
     // 先把最大的两个文件下到浏览器缓存里（约 10 MB + 6 MB），后面启动时就不用再等网络
-    await fetchBytes(fileset.wasmBinaryPath, '第 1 步 / 共 3 步：识别程序');
-    const model = await fetchBytes('./vendor/pose_landmarker_lite.task', '第 2 步 / 共 3 步：识别模型');
+    // 预下载只是为了显示进度和提速，失败了不影响后面：识别库会自己再去取
+    const base = new URL('./vendor/', location.href).href;
+    let model = null;
+    try { await fetchBytes(base + 'tasks-vision/wasm/' + String(fileset.wasmBinaryPath).split('/').pop(), '第 1 步 / 共 3 步：识别程序'); }
+    catch (e) { debugNote('预下载识别程序', e); }
+    try { model = await fetchBytes(base + 'pose_landmarker_lite.task', '第 2 步 / 共 3 步：识别模型'); }
+    catch (e) { debugNote('预下载识别模型', e); }
     const make = (delegate) =>
       PoseLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetBuffer: model, delegate },
+        baseOptions: { ...(model ? { modelAssetBuffer: model } : { modelAssetPath: base + 'pose_landmarker_lite.task' }), delegate },
         runningMode: 'VIDEO',
         numPoses: 1,
       });
@@ -470,9 +480,11 @@ function loadModel() {
     try {
       return await withTimeout(make('GPU'), 15000, 'GPU 启动超时');
     } catch (e) {
-      console.warn('GPU 启动失败，改用 CPU', e);
+      debugNote('显卡加速启动', e);
       setLoadStatus('第 3 步 / 共 3 步：启动识别（兼容模式）…');
-      return await withTimeout(make('CPU'), 45000, '识别模型启动超时。请刷新页面再试一次。');
+      try {
+        return await withTimeout(make('CPU'), 45000, '识别模型启动超时。请刷新页面再试一次。');
+      } catch (e2) { debugNote('兼容模式启动', e2); throw e2; }
     }
   })().then((m) => { setLoadStatus('识别已就绪，正在等待摄像头…'); return m; })
     .catch((e) => { landmarkerPromise = null; throw e; }));
@@ -489,13 +501,14 @@ class CameraSource {
       navigator.mediaDevices.getUserMedia({
         audio: false,
         video: { facingMode: this.facing, width: { ideal: 720 }, height: { ideal: 1280 } },
-      }),
+      }).catch((e) => { debugNote('打开摄像头', e); throw e; }),
     ]);
     this.stream = stream;
     setLoadStatus('正在打开摄像头画面…');
     const video = $('video');
     video.srcObject = stream;
-    await withTimeout(video.play(), 10000, '摄像头画面没有出来。请刷新页面再试一次。');
+    try { await withTimeout(video.play(), 10000, '摄像头画面没有出来。请刷新页面再试一次。'); }
+    catch (e) { debugNote('播放摄像头画面', e); throw e; }
     const w = video.videoWidth, h = video.videoHeight;
     let lastDetect = 0, lastVideoTime = -1, lms = null, shown = null, lastDraw = 0;
     const loop = () => {
@@ -706,6 +719,7 @@ const App = {
       try { this.wake = await navigator.wakeLock?.request('screen'); } catch { /* 没有也不影响 */ }
     } catch (e) {
       console.error(e);
+      debugNote('启动（最后停在：' + loadStatus + '）', e);
       const msg = e?.name === 'NotAllowedError' ? '没有拿到摄像头权限。请在浏览器里允许使用摄像头后再试。'
         : e?.name === 'NotFoundError' ? '这台设备没有找到摄像头。可以先看演示模式。'
         : (e?.message || '启动失败');
