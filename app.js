@@ -76,6 +76,82 @@ addEventListener('pointerup', releaseButtons);
 addEventListener('pointercancel', releaseButtons);
 addEventListener('blur', releaseButtons);
 
+// ---------- 录像：摄像头画面 + 骨架 + 教练说的话，合成一段视频，只留在本机 ----------
+const Rec = {
+  mr: null, chunks: [], cv: null, ctx: null, stream: null, last: 0, t0: 0, caption: '', capAt: 0, mime: '',
+  /** 教练每说一句话，记下来当字幕（系统朗读的声音录不进视频，所以用字幕代替） */
+  note(text) { this.caption = text; this.capAt = performance.now(); },
+  start(w, h) {
+    this.stop(true);
+    if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) return;
+    try {
+      const k = Math.min(1, 720 / Math.max(w, h));
+      this.cv = document.createElement('canvas');
+      this.cv.width = Math.round((w * k) / 2) * 2; this.cv.height = Math.round((h * k) / 2) * 2;
+      this.ctx = this.cv.getContext('2d');
+      this.mime = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp8', 'video/webm'].find((m) => MediaRecorder.isTypeSupported(m)) || '';
+      this.stream = this.cv.captureStream(15);
+      this.chunks = [];
+      const mr = new MediaRecorder(this.stream, { ...(this.mime ? { mimeType: this.mime } : {}), videoBitsPerSecond: 1200000 });
+      mr.ondataavailable = (e) => { if (e.data.size) this.chunks.push(e.data); };
+      mr.start(1000);
+      this.mr = mr; this.t0 = performance.now(); this.caption = '';
+    } catch (e) { debugNote('开始录像', e); this.mr = null; }
+  },
+  /** 每秒画约 15 帧：画面按原比例放进录像，手机中途转方向也不会变形 */
+  frame(video, overlay, mirror, hud) {
+    if (!this.mr) return;
+    const t = performance.now();
+    if (t - this.last < 60) return;
+    this.last = t;
+    const { cv, ctx } = this, W = cv.width, H = cv.height;
+    if (t - this.t0 > 8 * 60000) return; // 最长录 8 分钟，避免占满内存
+    ctx.fillStyle = '#2a2430'; ctx.fillRect(0, 0, W, H);
+    const k = Math.min(W / overlay.width, H / overlay.height);
+    const w = overlay.width * k, h = overlay.height * k, x = (W - w) / 2, y = (H - h) / 2;
+    ctx.save();
+    if (mirror) { ctx.translate(W, 0); ctx.scale(-1, 1); }
+    try { if (video && video.readyState >= 2) ctx.drawImage(video, x, y, w, h); } catch { /* 这一帧跳过 */ }
+    ctx.drawImage(overlay, x, y, w, h);
+    ctx.restore();
+    const u = Math.max(14, Math.round(Math.min(W, H) / 22));
+    const label = (text, cx, cy, align, bg) => {
+      ctx.font = `600 ${u}px "OPPO Sans", "PingFang SC", sans-serif`;
+      ctx.textAlign = align; ctx.textBaseline = 'middle';
+      const tw = ctx.measureText(text).width, pad = u * 0.6;
+      const left = align === 'center' ? cx - tw / 2 - pad : align === 'right' ? cx - tw - pad : cx - pad;
+      ctx.fillStyle = bg; ctx.fillRect(left, cy - u * 0.9, tw + pad * 2, u * 1.8);
+      ctx.fillStyle = '#fff'; ctx.fillText(text, cx, cy);
+    };
+    const sec = Math.floor((t - this.t0) / 1000);
+    label(hud, u * 1.2, u * 1.6, 'left', 'rgba(30,22,34,.6)');
+    label(`${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`, W - u * 1.2, u * 1.6, 'right', 'rgba(30,22,34,.6)');
+    if (this.caption && t - this.capAt < 4500) {
+      // 太长的话分两行
+      const max = Math.floor((W - u * 3) / u);
+      const lines = this.caption.length > max ? [this.caption.slice(0, max), this.caption.slice(max, max * 2)] : [this.caption];
+      lines.forEach((ln, i) => label('教练：' + ln, W / 2, H - u * 1.8 - (lines.length - 1 - i) * u * 1.9, 'center', 'rgba(215,92,136,.88)'));
+    }
+  },
+  /** 停止录像，返回视频文件；discard = 不要了 */
+  stop(discard) {
+    const mr = this.mr;
+    this.mr = null;
+    if (!mr) return Promise.resolve(null);
+    return new Promise((done) => {
+      const end = () => {
+        this.stream?.getTracks().forEach((tr) => tr.stop());
+        const blob = discard || !this.chunks.length ? null : new Blob(this.chunks, { type: mr.mimeType || this.mime || 'video/mp4' });
+        this.chunks = [];
+        done(blob);
+      };
+      mr.onstop = end;
+      try { mr.stop(); } catch { end(); }
+      setTimeout(end, 3000); // 个别浏览器不触发 onstop
+    });
+  },
+};
+
 // ---------- 语音 + 屏幕提示 ----------
 const Voice = {
   ok: 'speechSynthesis' in window,
@@ -95,12 +171,13 @@ const Voice = {
   },
   /** priority: 2 = 打断别的立刻说；1 = 排队；0 = 有人在说就算了 */
   say(text, priority = 1) {
-    if (!this.ok) return;
+    if (!this.ok) return Rec.note(text);
     if (speechSynthesis.speaking || speechSynthesis.pending) {
       if (priority === 0) return;
       if (priority === 2) speechSynthesis.cancel();
       else if (speechSynthesis.pending) return; // 不积压
     }
+    Rec.note(text);
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'zh-CN';
     if (this.voice) u.voice = this.voice;
@@ -776,6 +853,7 @@ const App = {
       const info = await this.source.start((lms, t) => this.onFrame(lms, t), (lms) => this.draw(lms), resize);
       $('view').classList.toggle('mirror', info.mirror);
       resize(info.w, info.h);
+      Rec.start(info.w, info.h);
       $('loading').hidden = true;
       this.phase = 'setup';
       try { this.wake = await navigator.wakeLock?.request('screen'); } catch { /* 没有也不影响 */ }
@@ -800,6 +878,9 @@ const App = {
       side: this.body?.side ?? 'l', core: !!this.body?.core,
       atTop: !!this.coach?.atTop, cue: !!this.coach && performance.now() < this.coach.cueUntil,
     });
+    const hud = this.phase === 'setup' ? '摆放：' + $('setupStatus').textContent
+      : `第 ${$('repNow').textContent} 次 / ${TARGET_REPS} · ${$('phaseText').textContent}`;
+    Rec.frame(this.mode === 'camera' ? $('video') : null, cv, $('view').classList.contains('mirror'), hud);
   },
 
   /** 每次拿到新的识别结果，更新教练的判断 */
@@ -852,12 +933,24 @@ const App = {
     };
     $('btnCopy').textContent = '复制本次数据';
     this.phase = 'done';
-    setTimeout(() => {
+    setTimeout(async () => {
+      const video = await Rec.stop();
       this.source?.stop(); this.source = null;
       this.wake?.release?.(); this.wake = null;
       this.renderSummary(s);
+      this.showRecording(video);
       this.show('summary');
     }, s && s.attempts >= TARGET_REPS ? 1200 : 0);
+  },
+
+  /** 小结页里放上刚才的录像 */
+  showRecording(blob) {
+    if (this.recUrl) URL.revokeObjectURL(this.recUrl);
+    this.recUrl = null; this.recBlob = blob && blob.size ? blob : null;
+    $('recBox').hidden = !this.recBlob;
+    $('btnSaveRec').textContent = '保存录像到手机';
+    if (this.recBlob) { this.recUrl = URL.createObjectURL(this.recBlob); $('recVideo').src = this.recUrl; }
+    else $('recVideo').removeAttribute('src');
   },
 
   renderSummary(s) {
@@ -904,6 +997,7 @@ const App = {
 
   home() {
     Voice.stop();
+    Rec.stop(true);
     this.source?.stop(); this.source = null;
     this.wake?.release?.(); this.wake = null;
     this.phase = 'home';
@@ -931,6 +1025,20 @@ $('btnStart').onclick = () => App.intro();
 $('btnIntroBack').onclick = () => App.home();
 $('btnReplay').onclick = () => Voice.say(INTRO_TEXT, 2);
 $('btnIntroGo').onclick = () => { Voice.stop(); App.start('camera', $('btnIntroGo')); };
+$('btnSaveRec').onclick = async () => {
+  const blob = App.recBlob;
+  if (!blob) return;
+  const d = new Date(), z = (n) => String(n).padStart(2, '0');
+  const name = `pilates-${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}.${/mp4/.test(blob.type) ? 'mp4' : 'webm'}`;
+  const file = new File([blob], name, { type: blob.type });
+  // 手机上弹出系统的分享面板，里面有“存储视频”；电脑上直接下载
+  if (navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file] }); return; } catch (e) { if (e?.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a');
+  a.href = App.recUrl; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  $('btnSaveRec').textContent = '已保存到下载';
+};
 $('btnCopy').onclick = async () => {
   const text = JSON.stringify(App.lastRun || { note: '没有数据' });
   let ok = false;

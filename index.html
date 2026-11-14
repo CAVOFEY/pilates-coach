@@ -176,6 +176,9 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 .rep { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-family: var(--font-num); font-size: 13px; font-weight: 700; background: var(--teal-100); color: var(--teal-700); }
 .rep.bad { background: var(--pink-100); color: var(--pink-600); }
 
+#recVideo { width: 100%; max-height: 62vh; border-radius: var(--r-md); background: #1c171f; display: block; }
+.rec-note { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-soft); }
+
 /* ================= 首页 ================= */
 #home {
   --home-bg: var(--pink-50);
@@ -474,6 +477,12 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
       <div class="reps" id="sumReps"></div>
     </div>
     <div class="note" id="sumNote"></div>
+    <div class="section" id="recBox" hidden>
+      <h2>回看这一次</h2>
+      <video id="recVideo" controls playsinline></video>
+      <button class="btn btn-ghost" id="btnSaveRec">保存录像到手机</button>
+      <p class="rec-note">录像里有摄像头画面、识别出的骨架和教练说的每一句话。它只存在这台手机里，没有上传；离开这个页面就会清除。</p>
+    </div>
     <div class="btn-row">
       <button class="btn btn-primary" id="btnAgain">再练一组</button>
       <button class="btn btn-ghost" id="btnHome">回首页</button>
