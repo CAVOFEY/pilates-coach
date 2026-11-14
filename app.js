@@ -849,7 +849,7 @@ function idealTop(R) {
 /** 标准动作在每段口令里抬到几成 */
 const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg === 'hold' ? 1 : seg === 'down' ? 1 - ease(clamp(sec / 3.4, 0, 1)) : 0);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=14'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=15'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -952,9 +952,36 @@ const Cmp = {
 };
 
 // ---------- 页面流程 ----------
-const INTRO_TEXT = '桥式。先看一遍。躺在垫子上，屈膝，双脚踩地，手放在身体两边。'
-  + '呼气，夹紧臀部，把臀部慢慢抬起来，抬到肩、髋、膝盖一条线。'
-  + '停一下，吸气。再呼气，慢慢放下来。看明白了就点开始。';
+// 讲解页的语音：一行一句，念到哪一行，屏幕上哪一行亮起来。[亮第几行（-1 = 都不亮）, 念什么]
+const INTRO_LINES = [
+  [-1, '桥式。先看一遍。'],
+  [0, '躺好。屈膝，双脚踩地，手放两边。'],
+  [1, '抬起，呼气。夹紧臀部，抬成一条直线。'],
+  [2, '停住，吸气。在最高处停一下。'],
+  [3, '放下，呼气。慢慢放回垫子。'],
+  [-1, '看明白了，就点开始。'],
+];
+const IntroTalk = {
+  run: 0,
+  mark(n) { [...$('introSteps').children].forEach((li, i) => li.classList.toggle('on', i === n)); },
+  play() {
+    const id = ++this.run;
+    this.mark(-1);
+    if (!Voice.ok) return;
+    speechSynthesis.cancel();
+    INTRO_LINES.forEach(([n, text], k) => {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'zh-CN';
+      if (Voice.voice) u.voice = Voice.voice;
+      u.rate = 1.05;
+      // 被打断的旧句子也会触发这些回调，用编号认出来、不理它
+      u.onstart = () => { if (id === this.run) this.mark(n); };
+      if (k === INTRO_LINES.length - 1) u.onend = () => { if (id === this.run) this.mark(-1); };
+      speechSynthesis.speak(u);
+    });
+  },
+  stop() { this.run++; this.mark(-1); Voice.stop(); },
+};
 const App = {
   mode: 'camera',
   facing: 'user',
@@ -1022,7 +1049,7 @@ const App = {
     this.phase = 'intro';
     this.show('intro');
     Intro3D.set(Intro3D.mode);
-    Voice.say(INTRO_TEXT, 2);
+    IntroTalk.play();
   },
 
   fitView() {
@@ -1241,9 +1268,9 @@ $('btnTheme').onclick = () => {
 };
 
 $('btnStart').onclick = () => App.intro();
-$('btnIntroBack').onclick = () => App.home();
-$('btnReplay').onclick = () => Voice.say(INTRO_TEXT, 2);
-$('btnIntroGo').onclick = () => { Voice.stop(); App.start('camera', $('btnIntroGo')); };
+$('btnIntroBack').onclick = () => { IntroTalk.stop(); App.home(); };
+$('btnReplay').onclick = () => IntroTalk.play();
+$('btnIntroGo').onclick = () => { IntroTalk.stop(); App.start('camera', $('btnIntroGo')); };
 $('btnSaveRec').onclick = async () => {
   const blob = App.recBlob;
   if (!blob) return;
