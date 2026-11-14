@@ -335,7 +335,20 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
 .intro-top { display: flex; align-items: center; justify-content: space-between; margin: 0 -6px; }
 #intro .btn-link { color: var(--ink-soft); padding: 0 6px; }
 #intro h1 { font-size: 30px; letter-spacing: .12em; }
-#intro .art { padding: 22px 12px 18px; }
+#intro .art { position: relative; overflow: hidden; flex: none; }
+#intro .art.is3d #introFig { visibility: hidden; }
+#intro .art canvas.c3d { position: absolute; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; animation: fade .45s ease-out both; }
+#intro .hint3d { position: absolute; left: 0; right: 0; bottom: 9px; margin: 0; pointer-events: none; }
+/* 从首页进来：示范区从首页的位置滑到这里，其余内容依次浮上来，首页同时淡出 */
+#intro.enter-intro { animation: introBg .4s ease-out both; }
+@keyframes introBg { from { background-color: transparent; } }
+#intro.enter-intro .art { transform-origin: 0 0; animation: artMove .62s var(--out) both; }
+@keyframes artMove { from { transform: translate(var(--dx, 0), var(--dy, 0)) scale(var(--sx, 1), var(--sy, 1)); } }
+#intro.enter-intro > :not(.art) { animation: rise .5s var(--out) both; animation-delay: .12s; }
+#intro.enter-intro > .steps { animation-delay: .2s; }
+#intro.enter-intro > .btn-primary { animation-delay: .28s; }
+.leave-fade { animation: leave .26s ease-out both; }
+@keyframes leave { to { opacity: 0; } }
 .muscles { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); }
 .muscles b { font-weight: 500; padding: 6px 13px; border-radius: 999px; background: var(--pink-100); color: var(--ink); }
 .steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; font-size: 16px; line-height: 1.55; }
@@ -362,7 +375,7 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
   .home-mid { flex: none; padding-bottom: 0; gap: 10px; margin-top: 6px; }
   .art, #intro .art { align-self: center; padding: 8px 20px; }
   .art canvas { width: auto; height: 118px; }
-  .art canvas.c3d { height: 150px; aspect-ratio: 2 / 1; }
+  #cmpBox .art canvas.c3d, .art3d canvas.c3d { height: 150px; aspect-ratio: 2 / 1; }
   .go { min-height: 58px; font-size: 22px; align-self: center; min-width: 320px; margin-top: 0; }
   #home .btn-link { margin-top: -4px; }
   #intro .btn-primary { margin-top: 0; }
@@ -371,6 +384,7 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
 /* 减弱动效：去掉位移和展开，保留淡入和颜色变化 */
 @media (prefers-reduced-motion: reduce) {
   .enter-reveal, .enter-rise, .enter-hud { animation: fade .2s ease-out both; }
+  #intro.enter-intro, #intro.enter-intro > * { animation: fade .2s ease-out both !important; }
   #repNow.pop { animation: none; }
   #summary.enter-rise .rep { animation: fade .2s ease-out backwards; }
   #toast, #toast.show { transform: none; }
@@ -416,22 +430,18 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
       <button class="btn btn-link" id="btnReplay">再讲一遍</button>
     </div>
     <h1>桥式</h1>
-    <div class="seg" role="tablist" aria-label="示范方式">
-      <button id="tab3d" role="tab" class="on">3D 可拖动</button>
-      <button id="tab2d" role="tab">平面</button>
-    </div>
-    <div class="art">
+    <div class="muscles"><span>练到</span><b>臀部</b><b>大腿后侧</b><b>核心</b></div>
+    <!-- 示范区和首页的示范区一样大；平面小人垫在下面占位，3D 加载好后盖在上面 -->
+    <div class="art" id="introArt">
       <canvas id="introFig" width="640" height="300" aria-label="桥式动作示范动画"></canvas>
       <canvas id="intro3d" class="c3d" hidden aria-label="可以拖动旋转的 3D 动作示范"></canvas>
       <span class="hint3d" id="hint3d" hidden>用手指拖动，可以绕着看</span>
     </div>
-    <div class="muscles"><span>练到</span><b>臀部</b><b>大腿后侧</b><b>核心</b></div>
     <ol class="steps">
-      <li><i>1</i><span>仰卧，屈膝，双脚踩地，与髋同宽，手臂放在身体两侧。</span></li>
-      <li><i>2</i><span>呼气，夹紧臀部，把骨盆一节一节卷离垫子，直到肩、髋、膝成一条直线。</span></li>
-      <li><i>3</i><span>顶端吸气，停住；再呼气，一节一节慢慢放下。</span></li>
+      <li><i>1</i><span>躺在垫子上，屈膝，双脚踩地，手放在身体两边。</span></li>
+      <li><i>2</i><span>呼气，夹紧臀部，把臀部慢慢抬起来，抬到肩、髋、膝盖一条线。</span></li>
+      <li><i>3</i><span>停一下，吸气；再呼气，慢慢放下来。</span></li>
     </ol>
-    <p class="tip">跟练时把手机横过来立稳，侧面对着你，要能拍到从头到脚。请先关掉手机的竖屏锁定。</p>
     <button class="btn btn-primary" id="btnIntroGo">我会了，开始</button>
   </section>
 
@@ -543,6 +553,6 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
   setTimeout(function () { if (!window.__app) report('app.js 4 秒内没有跑起来'); else new Image().src = './__log?' + encodeURIComponent('OK app started | ' + navigator.userAgent); }, 4000);
 })();
 </script>
-<script type="module" src="./app.js?v=8"></script>
+<script type="module" src="./app.js?v=9"></script>
 </body>
 </html>

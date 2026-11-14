@@ -849,7 +849,7 @@ function idealTop(R) {
 /** 标准动作在每段口令里抬到几成 */
 const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg === 'hold' ? 1 : seg === 'down' ? 1 - ease(clamp(sec / 3.4, 0, 1)) : 0);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=8'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=9'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -857,8 +857,6 @@ const Intro3D = {
   viewer: null, mode: '3d',
   async set(mode) {
     this.mode = mode;
-    $('tab2d').classList.toggle('on', mode === '2d');
-    $('tab3d').classList.toggle('on', mode === '3d');
     if (mode === '3d' && !this.viewer) {
       try {
         const m = await get3D();
@@ -875,10 +873,10 @@ const Intro3D = {
           };
           v.start();
         }
-      } catch (e) { debugNote('3D 示范', e); this.mode = '2d'; $('tab3d').hidden = true; $('tab2d').classList.add('on'); }
+      } catch (e) { debugNote('3D 示范', e); this.mode = '2d'; }   // 3D 起不来就留着平面小人
     }
     const use3d = this.mode === '3d' && !!this.viewer;
-    $('introFig').hidden = use3d;
+    $('introArt').classList.toggle('is3d', use3d);
     $('intro3d').hidden = !use3d;
     $('hint3d').hidden = !use3d;
   },
@@ -954,9 +952,9 @@ const Cmp = {
 };
 
 // ---------- 页面流程 ----------
-const INTRO_TEXT = '桥式。先看一遍动作。仰卧，屈膝，双脚踩地，与髋同宽，手臂放在身体两侧。'
-  + '呼气，夹紧臀部，把骨盆一节一节卷离垫子，直到肩、髋、膝成一条直线。'
-  + '顶端吸气，停住。再呼气，一节一节慢慢放下。看明白了，就点开始。';
+const INTRO_TEXT = '桥式。先看一遍。躺在垫子上，屈膝，双脚踩地，手放在身体两边。'
+  + '呼气，夹紧臀部，把臀部慢慢抬起来，抬到肩、髋、膝盖一条线。'
+  + '停一下，吸气。再呼气，慢慢放下来。看明白了就点开始。';
 const App = {
   mode: 'camera',
   facing: 'user',
@@ -975,7 +973,7 @@ const App = {
     const cur = all.find((el) => !el.hidden && el !== next);
     clearTimeout(this.showTimer);
     for (const el of all) {
-      el.classList.remove('enter-reveal', 'enter-rise', 'enter-fade');
+      el.classList.remove('enter-reveal', 'enter-rise', 'enter-fade', 'enter-intro', 'leave-fade');
       el.style.zIndex = '';
       if (el !== next && el !== cur) el.hidden = true;
     }
@@ -984,7 +982,8 @@ const App = {
       next.hidden = false;
       return;
     }
-    const kind = id === 'stageScreen' && from ? 'enter-reveal' : id === 'summary' ? 'enter-rise' : 'enter-fade';
+    const toIntro = id === 'intro' && cur.id === 'home';
+    const kind = toIntro ? 'enter-intro' : id === 'stageScreen' && from ? 'enter-reveal' : id === 'summary' ? 'enter-rise' : 'enter-fade';
     if (from) {
       // 从手指按下的位置展开；没有按压记录（比如键盘操作）就用按钮中心
       const r = from.getBoundingClientRect(), ph = $('phone').getBoundingClientRect();
@@ -994,12 +993,21 @@ const App = {
     }
     next.hidden = false;
     next.style.zIndex = 2;
+    if (toIntro) {
+      // 讲解页的示范区从首页示范区的位置出发，滑到自己的位置
+      const a = cur.querySelector('.art').getBoundingClientRect(), b = $('introArt').getBoundingClientRect();
+      const st = $('introArt').style;
+      st.setProperty('--dx', a.left - b.left + 'px'); st.setProperty('--dy', a.top - b.top + 'px');
+      st.setProperty('--sx', a.width / (b.width || 1)); st.setProperty('--sy', a.height / (b.height || 1));
+      cur.classList.add('leave-fade');
+    }
     next.classList.add(kind);
     this.showTimer = setTimeout(() => {
       cur.hidden = true;
       next.style.zIndex = '';
       next.classList.remove(kind);
-    }, kind === 'enter-reveal' ? 620 : kind === 'enter-rise' ? 460 : 240);
+      cur.classList.remove('leave-fade');
+    }, kind === 'enter-intro' ? 800 : kind === 'enter-reveal' ? 620 : kind === 'enter-rise' ? 460 : 240);
   },
 
   /** 开始前的动作讲解：放示范动画，念一遍要领 */
@@ -1229,8 +1237,6 @@ $('btnTheme').onclick = () => {
 $('btnStart').onclick = () => App.intro();
 $('btnIntroBack').onclick = () => App.home();
 $('btnReplay').onclick = () => Voice.say(INTRO_TEXT, 2);
-$('tab3d').onclick = () => Intro3D.set('3d');
-$('tab2d').onclick = () => Intro3D.set('2d');
 $('btnIntroGo').onclick = () => { Voice.stop(); App.start('camera', $('btnIntroGo')); };
 $('btnSaveRec').onclick = async () => {
   const blob = App.recBlob;
