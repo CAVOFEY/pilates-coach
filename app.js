@@ -434,10 +434,14 @@ function setLoadStatus(text) {
 }
 const withTimeout = (promise, ms, message) =>
   Promise.race([promise, new Promise((_, no) => setTimeout(() => no(new Error(message)), ms))]);
-/** 自己下载文件，这样能显示已经下了多少 */
-async function fetchBytes(url, label) {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`${label}下载失败（${r.status}）`);
+/** 自己下载文件，这样能显示已经下了多少。给几个地址就同时去连，谁先响应用谁，其余的取消 */
+async function fetchBytes(urls, label) {
+  const tries = urls.map((url) => {
+    const ctl = new AbortController();
+    return { ctl, p: fetch(url, { signal: ctl.signal }).then((r) => { if (!r.ok) throw new Error(`${label}下载失败（${r.status}）`); return r; }) };
+  });
+  const r = await Promise.any(tries.map((t) => t.p));
+  tries.forEach((t) => t.p.then((x) => { if (x !== r) t.ctl.abort(); }, () => {}));
   const reader = r.body?.getReader?.();
   if (!reader) return new Uint8Array(await r.arrayBuffer());
   const chunks = []; let got = 0;
@@ -466,10 +470,20 @@ function loadModel() {
     // 预下载只是为了显示进度和提速，失败了不影响后面：识别库会自己再去取
     const base = new URL('./vendor/', location.href).href;
     let model = null;
-    try { await fetchBytes(base + 'tasks-vision/wasm/' + String(fileset.wasmBinaryPath).split('/').pop(), '第 1 步 / 共 3 步：识别程序'); }
-    catch (e) { debugNote('预下载识别程序', e); }
-    try { model = await fetchBytes(base + 'pose_landmarker_lite.task', '第 2 步 / 共 3 步：识别模型'); }
-    catch (e) { debugNote('预下载识别模型', e); }
+    // 两个大文件同时从本站和 jsDelivr 镜像下载，哪边快用哪边（github.io 在国内常常很慢）
+    const wasmName = String(fileset.wasmBinaryPath).split('/').pop();
+    const wasmJob = fetchBytes([
+      base + 'tasks-vision/wasm/' + wasmName,
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm/' + wasmName,
+    ], '第 1 步 / 共 3 步：识别程序').catch((e) => { debugNote('预下载识别程序', e); return null; });
+    const modelJob = fetchBytes([
+      base + 'pose_landmarker_lite.task',
+      'https://cdn.jsdelivr.net/gh/CAVOFEY/pilates-coach@main/vendor/pose_landmarker_lite.task',
+    ], '第 2 步 / 共 3 步：识别模型').catch((e) => { debugNote('预下载识别模型', e); return null; });
+    const wasm = await wasmJob;
+    // 下好的识别程序直接交给识别库，不让它再下一遍
+    if (wasm) fileset.wasmBinaryPath = URL.createObjectURL(new Blob([wasm], { type: 'application/wasm' }));
+    model = await modelJob;
     const make = (delegate) =>
       PoseLandmarker.createFromOptions(fileset, {
         baseOptions: { ...(model ? { modelAssetBuffer: model } : { modelAssetPath: base + 'pose_landmarker_lite.task' }), delegate },
