@@ -8,17 +8,19 @@ export async function load3D() {
   return THREE;
 }
 
-// [起点, 终点, 粗细（半径，米）, 用哪种颜色, 是不是发力部位]
+// [起点, 终点, 起点粗细, 终点粗细（半径，米）, 用哪种颜色, 是不是发力部位]
+// 两头粗细不同 = 一头粗一头细的锥形，关节处不会鼓出一个球
 const BONES = [
-  ['midSh', 'spine', 0.13, 'top', false], ['spine', 'midHip', 0.126, 'top', true],
-  ['lSh', 'rSh', 0.078, 'top', false], ['lHip', 'rHip', 0.108, 'pants', true],
-  ['lSh', 'lEl', 0.052, 'skin', false], ['lEl', 'lWr', 0.047, 'skin', false],
-  ['rSh', 'rEl', 0.052, 'skin', false], ['rEl', 'rWr', 0.047, 'skin', false],
-  ['lHip', 'lKn', 0.09, 'pants', true], ['lKn', 'lAn', 0.068, 'pants', false], ['lAn', 'lToe', 0.054, 'skin', false],
-  ['rHip', 'rKn', 0.09, 'pants', true], ['rKn', 'rAn', 0.068, 'pants', false], ['rAn', 'rToe', 0.054, 'skin', false],
+  // 胸廓（上衣）比腰宽一圈；腰到髋是高腰瑜伽裤
+  ['midSh', 'spine', 0.128, 0.134, 'top', false], ['spine', 'midHip', 0.106, 0.112, 'pants', true],
+  ['lSh', 'rSh', 0.078, 0.078, 'top', false], ['lHip', 'rHip', 0.104, 0.104, 'pants', true],
+  ['lSh', 'lEl', 0.052, 0.046, 'skin', false], ['lEl', 'lWr', 0.046, 0.041, 'skin', false],
+  ['rSh', 'rEl', 0.052, 0.046, 'skin', false], ['rEl', 'rWr', 0.046, 0.041, 'skin', false],
+  ['lHip', 'lKn', 0.088, 0.064, 'pants', true], ['lKn', 'lAn', 0.064, 0.047, 'pants', false], ['lAn', 'lToe', 0.05, 0.05, 'skin', false],
+  ['rHip', 'rKn', 0.088, 0.064, 'pants', true], ['rKn', 'rAn', 0.064, 0.047, 'pants', false], ['rAn', 'rToe', 0.05, 0.05, 'skin', false],
 ];
-const HEAD_R = 0.168, HAND_R = 0.062, BUN_R = 0.078, EDGE = 0.011;
-export const PALETTE = { skin: 0xffe3d6, top: 0xf9c9dc, pants: 0x8fdccf, hair: 0x6b5570, hot: 0xe8789f, edge: 0x5a4660 };
+const HEAD_R = 0.168, HAND_R = 0.058, BUN_R = 0.07, EDGE = 0.011;
+export const PALETTE = { skin: 0xffe3d6, top: 0xf9c9dc, pants: 0x7d6873, hair: 0x513c4b, hot: 0xe8789f, edge: 0x45353f };
 
 export class Viewer {
   constructor(canvas) {
@@ -42,6 +44,9 @@ export class Viewer {
     this.scene.add(mat);
     this.cyl = new T.CylinderGeometry(1, 1, 1, 20, 1, true);
     this.sph = new T.SphereGeometry(1, 24, 16);
+    // 头发：一块盖住头顶、后脑勺和两侧的“帽子”形色块，前面留出脸
+    this.hairCap = new T.SphereGeometry(1, 28, 14, 0, Math.PI * 2, 0, Math.PI * 0.57);
+    this.cones = {};
     this.target = new T.Vector3(0.4, 0.22, 0);
     this.yaw = 0.55; this.pitch = 0.24; this.dist = 2.55;
     this.auto = true;          // 没人碰之前自己慢慢转
@@ -78,6 +83,12 @@ export class Viewer {
    * colors：{ skin, top, pants, hair }，不给就用默认配色；给一个数字就是整个人一个颜色。
    * opacity < 1 = 半透明的“影子”（不描边、不画脸）。
    */
+  /** 一头粗一头细的圆柱，按粗细比例各做一份、重复使用 */
+  _cone(ratio) {
+    const k = ratio.toFixed(3);
+    return (this.cones[k] ??= new THREE.CylinderGeometry(ratio, 1, 1, 20, 1, true));
+  }
+
   figure(key, { colors = PALETTE, hot = PALETTE.hot, opacity = 1 } = {}) {
     const T = THREE;
     const solid = opacity >= 1;
@@ -90,13 +101,13 @@ export class Viewer {
     const add = (geo, m) => { const mesh = new T.Mesh(geo, m); group.add(mesh); return mesh; };
     // 每个零件都配一个稍大一圈、只画背面的深色壳，看起来就是描边
     const pair = (geo, m) => ({ fill: add(geo, m), line: edge ? add(geo, edge) : null });
-    const parts = BONES.map(([a, b, r, c, isHot]) => {
+    const parts = BONES.map(([a, b, r, rb, c, isHot]) => {
       const m = isHot ? glow[c] : mats[c];
-      return { a, b, r, bone: pair(this.cyl, m), ja: pair(this.sph, m), jb: pair(this.sph, m) };
+      return { a, b, r, rb, bone: pair(this._cone(rb / r), m), ja: pair(this.sph, m), jb: pair(this.sph, m) };
     });
     const f = {
       group, parts, glow, base: { top: new T.Color(pal.top), pants: new T.Color(pal.pants) }, hot: new T.Color(hot),
-      head: pair(this.sph, mats.skin), bun: pair(this.sph, mats.hair),
+      head: pair(this.sph, mats.skin), hair: pair(this.hairCap, mats.hair), bun: pair(this.sph, mats.hair),
       hands: [pair(this.sph, mats.skin), pair(this.sph, mats.skin)],
       face: solid ? {
         eyes: [add(this.sph, new T.MeshBasicMaterial({ color: 0x4a3a50 })), add(this.sph, new T.MeshBasicMaterial({ color: 0x4a3a50 }))],
@@ -135,7 +146,7 @@ export class Viewer {
         m.scale.set(r, len, r);
         m.quaternion.setFromUnitVectors(UP, D);
       }
-      ball(p.ja, A, p.r); ball(p.jb, B, p.r);
+      ball(p.ja, A, p.r); ball(p.jb, B, p.rb);
     }
     ball(f.hands[0], A.fromArray(J.lWr), HAND_R);
     ball(f.hands[1], A.fromArray(J.rWr), HAND_R);
@@ -148,7 +159,12 @@ export class Viewer {
     // 脸朝哪：左右肩的连线和“朝头顶”的方向都垂直的那一面
     const side = v(6).fromArray(J.lSh).sub(A.fromArray(J.rSh)).normalize();
     const front = v(7).crossVectors(side, up).normalize();
-    ball(f.bun, A.copy(head).addScaledVector(up, HEAD_R * 0.95).addScaledVector(front, -HEAD_R * 0.25), BUN_R);
+    // 头发盖在头顶偏后，发际线落在额头上方
+    const axis = A.copy(up).multiplyScalar(0.76).addScaledVector(front, -0.65).normalize();
+    ball(f.hair, head, HEAD_R + 0.012);
+    f.hair.fill.quaternion.setFromUnitVectors(UP, axis);
+    f.hair.line?.quaternion.copy(f.hair.fill.quaternion);
+    ball(f.bun, B.copy(head).addScaledVector(axis, HEAD_R + 0.012 + BUN_R * 0.55), BUN_R);
     if (f.face) {
       f.face.eyes.forEach((m, i) => {
         m.position.copy(head).addScaledVector(front, HEAD_R * 0.9).addScaledVector(side, (i ? -1 : 1) * HEAD_R * 0.36).addScaledVector(up, HEAD_R * 0.02);

@@ -912,7 +912,7 @@ const Cmp = {
         const v = this.viewer = new m.Viewer($('cmp3d'));
         v.auto = false; v.yaw = 0.4;
         v.figure('std', { colors: 0x3bb8a6, opacity: 0.34 });
-        v.figure('you', { colors: { skin: 0xffe3d6, top: 0xf4a9c4, pants: 0xe8789f, hair: 0x6b5570 }, hot: 0xe8789f });
+        v.figure('you', { colors: { skin: 0xffe3d6, top: 0xf4a9c4, pants: 0x7d6873, hair: 0x513c4b }, hot: 0xe8789f });
         v.onTick = (now) => this.tick(now);
         v.start();
       }
