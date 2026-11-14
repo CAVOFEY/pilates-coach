@@ -190,7 +190,7 @@ export class Viewer {
       const len = D.length() || 1e-4;
       D.divideScalar(len);
       // 肚子这一段：固定朝向（肚皮朝外），核心收紧时只微微下沉一点
-      const flat = p.core ? 1 - 0.1 * tuck : 1;
+      const flat = p.core ? 1 - 0.06 * tuck : 1;
       if (p.core) {
         W.front.crossVectors(D, W.side).normalize();          // 肚皮朝外的方向
         W.z.copy(W.front).negate();                           // 圆柱贴图的正中（0.5 处）在它自己的 -z 方向，所以把 -z 对准肚皮
@@ -213,17 +213,17 @@ export class Viewer {
       ball(p.ja, A, p.r); ball(p.jb, B, p.rb);
     }
     if (f.core) {
-      // 核心色块：从胸口下面到骨盆上缘，肚皮朝外，跟着肚子一起微微下沉
+      // 核心色块：从胸口下面到骨盆上缘，肚皮朝外。它是罩在身体外面的一层壳，不能跟着往下沉，否则会沉进胸口里被挡住
       A.fromArray(along(CORE_SPAN[0])); B.fromArray(along(CORE_SPAN[1]));
       D.subVectors(B, A);
-      const len = D.length() || 1e-4, flat = 1 - 0.1 * tuck;
+      const len = D.length() || 1e-4;
       D.divideScalar(len);
       W.front.crossVectors(D, W.side).normalize();
       W.z.copy(W.front).negate();
       W.x.crossVectors(D, W.z).normalize();
       W.m.makeBasis(W.x, D, W.z);
-      f.core.position.addVectors(A, B).multiplyScalar(0.5).addScaledVector(W.front, -CORE_R[0] * (1 - flat));
-      f.core.scale.set(CORE_R[0], len, CORE_R[0] * flat);
+      f.core.position.addVectors(A, B).multiplyScalar(0.5);
+      f.core.scale.set(CORE_R[0], len, CORE_R[0]);
       f.core.quaternion.setFromRotationMatrix(W.m);
     }
     ball(f.hands[0], A.fromArray(J.lWr), HAND_R);
@@ -273,7 +273,7 @@ export class Viewer {
     for (const k in HOT_ALL) f.glow[k].color.copy(f.base).lerp(f.hot, k === 'waist' ? 0 : glow * (hot[k] ?? 0));
     if (f.core) {
       const u = f.core.material.uniforms, w = hot.waist ?? 0;
-      u.size.value = 1 - 0.36 * tuck;                 // 收紧：椭圆变小
+      u.size.value = 1 - 0.26 * tuck;                 // 收紧：椭圆变小
       u.feather.value = 0.9 - 0.62 * tuck;            // 收紧：渐变的边缘变窄、变清楚
       u.alpha.value = w * (0.5 + 0.45 * tuck);        // 收紧：颜色更实
       f.core.visible = w > 0;
