@@ -520,6 +520,20 @@ const withTimeout = (promise, ms, message) =>
   Promise.race([promise, new Promise((_, no) => setTimeout(() => no(new Error(message)), ms))]);
 /** 自己下载文件，这样能显示已经下了多少。给几个地址就同时去连，谁先响应用谁，其余的取消 */
 async function fetchBytes(urls, label) {
+  // 下过一次就存在手机里（浏览器的缓存存储），以后打开直接读，不再走网络
+  const key = urls[0] + '?v=' + ASSET_VERSION;
+  let store = null;
+  try {
+    store = await caches.open('pilates-assets');
+    const hit = await store.match(key);
+    if (hit) { setLoadStatus(`${label}：已在本机`); return new Uint8Array(await hit.arrayBuffer()); }
+  } catch { /* 这个浏览器不让存，那就每次下载 */ }
+  const bytes = await downloadBytes(urls, label);
+  try { await store?.put(key, new Response(bytes, { headers: { 'Content-Type': 'application/octet-stream' } })); } catch { /* 存不下就算了 */ }
+  return bytes;
+}
+const ASSET_VERSION = 'tasks-vision-0.10.21';
+async function downloadBytes(urls, label) {
   const tries = urls.map((url) => {
     const ctl = new AbortController();
     return { ctl, p: fetch(url, { signal: ctl.signal }).then((r) => { if (!r.ok) throw new Error(`${label}下载失败（${r.status}）`); return r; }) };
