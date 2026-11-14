@@ -849,7 +849,7 @@ function idealTop(R) {
 /** 标准动作在每段口令里抬到几成 */
 const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg === 'hold' ? 1 : seg === 'down' ? 1 - ease(clamp(sec / 3.4, 0, 1)) : 0);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=7'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=8'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -870,6 +870,7 @@ const Intro3D = {
             // 和平面示范同一个节奏：抬起 2.4 秒，停 2 秒，放下 2.6 秒，休息 1.6 秒
             const c = (now / 1000) % 8.6;
             const p = REDUCED ? 1 : c < 2.4 ? io(c / 2.4) : c < 4.4 ? 1 : c < 7 ? 1 - io((c - 4.4) / 2.6) : 0;
+            v.arrowAt(stdJoints(p), REDUCED ? null : c);
             v.pose('std', stdJoints(p), p, !REDUCED && c >= 1 && c < 5.9);   // 开始抬起 1 秒后做用力的表情，到开始放下 1.5 秒后恢复
           };
           v.start();
@@ -946,6 +947,7 @@ const Cmp = {
     let i = 0;
     while (i < fr.length - 2 && fr[i + 1].t < at) i++;
     const a = fr[i], b = fr[i + 1], k = clamp((at - a.t) / (b.t - a.t || 1), 0, 1);
+    this.viewer.arrowAt(a.J, a.seg === 'up' ? a.sec : null);
     this.viewer.pose('you', lerpJ(a.J, b.J, k), 0, a.seg === 'hold' || (a.seg === 'up' && a.sec >= 1) || (a.seg === 'down' && a.sec < 1.5));
     this.viewer.pose('std', lerpJ(d.rest, d.top, stdLift(a.seg, a.sec + ((b.t - a.t) * k) / 1000)));
   },

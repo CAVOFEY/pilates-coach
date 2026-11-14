@@ -47,6 +47,17 @@ export class Viewer {
     // 头发：一块盖住头顶、后脑勺和两侧的“帽子”形色块，前面留出脸
     this.hairCap = new T.SphereGeometry(1, 28, 14, 0, Math.PI * 2, 0, Math.PI * 0.57);
     this.cones = {};
+    // 提示箭头：髋两侧各一个，亮蓝绿色，开始抬起时往上“biu”一下
+    this.arrowMat = new T.MeshBasicMaterial({ color: 0x19d9c3, transparent: true, depthWrite: false });
+    const shaft = new T.CylinderGeometry(0.024, 0.024, 0.11, 16).translate(0, 0.055, 0);
+    const tip = new T.ConeGeometry(0.062, 0.1, 20).translate(0, 0.16, 0);
+    this.arrows = [0, 1].map(() => {
+      const g = new T.Group();
+      g.add(new T.Mesh(shaft, this.arrowMat), new T.Mesh(tip, this.arrowMat));
+      g.visible = false; g.renderOrder = 5;
+      this.scene.add(g);
+      return g;
+    });
     this.target = new T.Vector3(0.4, 0.22, 0);
     this.yaw = 0.55; this.pitch = 0.24; this.dist = 2.55;
     this.auto = true;          // 没人碰之前自己慢慢转
@@ -196,6 +207,24 @@ export class Viewer {
     for (const k of ['top', 'pants']) {
       f.glow[k].color.copy(f.base[k]).lerp(f.hot, glow);
     }
+  }
+
+  /** 髋旁边的向上箭头。t = 开始抬起后过了几秒；不在抬起的开头就传 null（箭头隐藏） */
+  arrowAt(J, t) {
+    const on = !!J && t != null && t >= 0 && t < 1.5;
+    for (const g of this.arrows) g.visible = on;
+    if (!on) return;
+    const p = (t % 0.75) / 0.75;                       // 连着“biu”两下，每下 0.75 秒
+    const rise = 1 - (1 - p) ** 3;                     // 先快后慢
+    this.arrowMat.opacity = p < 0.12 ? p / 0.12 : 1 - ((p - 0.12) / 0.88) ** 2;
+    const k = 0.75 + 0.35 * Math.min(1, p / 0.18);
+    const hx = (J.lHip[0] + J.rHip[0]) / 2, hy = (J.lHip[1] + J.rHip[1]) / 2, hz = (J.lHip[2] + J.rHip[2]) / 2;
+    const dz = J.lHip[2] - J.rHip[2], dx = J.lHip[0] - J.rHip[0], w = Math.hypot(dx, dz) || 1;
+    this.arrows.forEach((g, i) => {
+      const s = i ? -1 : 1, off = w / 2 + 0.2;
+      g.position.set(hx + (dx / w) * off * s, Math.max(0.02, hy - 0.16) + rise * 0.3, hz + (dz / w) * off * s);
+      g.scale.setScalar(k);
+    });
   }
 
   start() {
