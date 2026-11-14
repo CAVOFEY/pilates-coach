@@ -356,11 +356,11 @@ const EXERCISES = [
       if ((lineY - b.hip.y) / b.torso > 0.1) c.flag++;
     },
     extra: (c) => (c.flag >= 4 ? 'arch' : c.knee != null && c.knee > 115 ? 'feetFar' : c.knee != null && c.knee < 58 ? 'feetNear' : null),
-    pose: bridgePose, sag: true, fit: 1, hot: ['waist', 'hip', 'thigh'], arrow: { at: 'Hip', dir: 'up' }, cam: { x: 0.4, dist: 2.55 },
+    pose: bridgePose, sag: true, fit: 1, hot: { hip: 1, thigh: 1, waist: 0.55 }, glow2d: 'back',   // 主要是臀和大腿后侧，下背和核心帮忙稳住 arrow: { at: 'Hip', dir: 'up' }, cam: { x: 0.4, dist: 2.55 },
     idealTop: idealBridge,
   },
   {
-    id: 'kneefold', name: '屈膝抬腿', muscles: ['下腹', '核心', '大腿前侧'],
+    id: 'kneefold', name: '屈膝抬腿', muscles: ['下腹', '核心', '髋前侧'],
     steps: [['躺好', '屈膝，双脚踩地，手放两边', ''], ['抬腿', '收紧肚子，抬到大腿竖直', 'out'], ['停住', '小腿放平，腰贴住垫子', 'in'], ['放下', '脚尖慢慢点回垫子', 'out']],
     seg: { up: '呼气，抬腿', hold: '停住，吸气', down: '呼气，放下', rest: '吸气，准备' },
     say: { up: '呼气，抬腿。', hold: '停住，吸气。', almost: '停住，膝盖再抬高一点。', down: '呼气，慢慢放下。' },
@@ -384,12 +384,12 @@ const EXERCISES = [
     },
     perfect: '抬腿和放下的全程，试着让腰一直贴着垫子不拱起来。',
     extra: (c) => (c.peakAngle < 72 ? 'over' : null),
-    pose: kneefoldPose, sag: false, fit: 1, hot: ['waist', 'thigh'], arrow: { at: 'Kn', dir: 'up' }, cam: { x: 0.45, dist: 2.6 },
+    pose: kneefoldPose, sag: false, fit: 1, hot: { waist: 1, thigh: 0.5 }, glow2d: 'front',   // 深层腹肌稳住骨盆，髋屈肌（大腿根前侧）把腿抬起来；臀部不是重点 arrow: { at: 'Kn', dir: 'up' }, cam: { x: 0.45, dist: 2.6 },
     idealTop: idealKneefold,
   },
   {
-    id: 'heelslide', name: '脚跟滑动', muscles: ['核心', '大腿后侧', '髋部稳定'],
-    steps: [['躺好', '屈膝，双脚踩地，手放两边', ''], ['伸腿', '脚跟贴着垫子，把腿滑直', 'out'], ['停住', '腿伸直，腰不要拱起来', 'in'], ['收回', '脚跟贴着垫子滑回来', 'out']],
+    id: 'heelslide', name: '脚跟滑动', muscles: ['核心', '骨盆稳定'],
+    steps: [['躺好', '屈膝，双脚踩地，手放两边', ''], ['伸腿', '勾脚，脚跟贴着垫子把腿滑直', 'out'], ['停住', '腿伸直，腰不要拱起来', 'in'], ['收回', '脚跟贴着垫子滑回来', 'out']],
     seg: { up: '呼气，伸腿', hold: '停住，吸气', down: '呼气，收回', rest: '吸气，准备' },
     say: { up: '呼气，伸腿。', hold: '停住，吸气。', almost: '停住，腿再伸直一点。', down: '呼气，慢慢收回。' },
     meter: '伸直程度', angleName: '平均膝盖角度', ideal: 175,
@@ -409,7 +409,7 @@ const EXERCISES = [
       noHold: '伸直后先停住，等听到“收回”再往回滑。',
     },
     perfect: '伸腿和收回的时候，试着让骨盆一点都不晃。',
-    pose: heelslidePose, sag: false, fit: 0.8, hot: ['waist', 'thigh'], arrow: { at: 'An', dir: 'out' }, cam: { x: 0.62, dist: 3.0, mat: [1.24, 0.63] },   // 腿伸直后比较长：垫子加长，镜头退远
+    pose: heelslidePose, sag: false, fit: 0.8, hot: { waist: 1 }, glow2d: 'core',   // 练的是腿在动的时候核心稳住骨盆；腿本身只是在滑 arrow: { at: 'An', dir: 'out' }, cam: { x: 0.62, dist: 3.0, mat: [1.24, 0.63] },   // 腿伸直后比较长：垫子加长，镜头退远
     idealTop: idealHeelslide,
   },
 ];
@@ -889,12 +889,18 @@ function startFigure(cvId, hostId) {
       // 垫子
       ctx.strokeStyle = MAT; ctx.lineWidth = 4;
       path([{ x: 34, y: 480 }, { x: 34 + 292 / EX.fit, y: 480 }]); ctx.stroke();
-      // 发力部位：下背 → 臀 → 大腿后侧的一道柔光
+      // 发力部位的一道柔光，每个动作亮的地方不一样
       const half = { x: (H.x + K.x) / 2, y: (H.y + K.y) / 2 };
       ctx.save();
       ctx.shadowColor = `rgba(${HOT},${0.9 * glow})`; ctx.shadowBlur = 18 + 14 * glow;
       ctx.strokeStyle = `rgba(${HOT},${0.14 + 0.76 * glow})`; ctx.lineWidth = W * (2.2 + 0.6 * glow);
-      path([spineAt(0.62), spineAt(0.8), H, half]); ctx.stroke();
+      if (EX.glow2d === 'back') path([spineAt(0.62), spineAt(0.8), H, half]);       // 下背 → 臀 → 大腿后侧
+      else {
+        ctx.translate(0, -W * 0.9);                                                 // 肚子这一侧（仰卧时朝上）
+        if (EX.glow2d === 'front') path([spineAt(0.42), spineAt(0.8), H, { x: H.x + (K.x - H.x) * 0.3, y: H.y + (K.y - H.y) * 0.3 }]);   // 腹部 → 大腿根前侧
+        else path([spineAt(0.36), spineAt(0.92)]);                                  // 只有腹部
+      }
+      ctx.stroke();
       ctx.restore();
       // 身体：一笔连贯的线
       ctx.strokeStyle = BODY; ctx.lineWidth = W;
@@ -986,7 +992,7 @@ function idealHeelslide(R) {
 /** 标准动作在每段口令里做到几成 */
 const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg === 'hold' ? 1 : seg === 'down' ? 1 - ease(clamp(sec / 3.4, 0, 1)) : 0);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=18'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=19'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -1364,7 +1370,6 @@ const App = {
     this.exIndex = ((i % n) + n) % n;
     EX = EXERCISES[this.exIndex];
     $('exName').textContent = EX.name;
-    [...$('exDots').children].forEach((d, k) => d.classList.toggle('on', k === this.exIndex));
     for (const el of [$('demoFig'), $('exName')]) {
       el.classList.remove('swap-next', 'swap-prev');
       replay(el, dir > 0 ? 'swap-next' : 'swap-prev');

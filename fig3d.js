@@ -19,7 +19,7 @@ const BONES = [
   ['lHip', 'lKn', 0.088, 0.064, 'pants', 'thigh'], ['lKn', 'lAn', 0.064, 0.047, 'pants', false], ['lAn', 'lToe', 0.05, 0.05, 'skin', false],
   ['rHip', 'rKn', 0.088, 0.064, 'pants', 'thigh'], ['rKn', 'rAn', 0.064, 0.047, 'pants', false], ['rAn', 'rToe', 0.05, 0.05, 'skin', false],
 ];
-const HOT_ALL = ['waist', 'hip', 'thigh'];
+const HOT_ALL = { waist: 1, hip: 1, thigh: 1 };
 const HEAD_R = 0.168, HAND_R = 0.058, BUN_R = 0.07, EDGE = 0.011;
 export const PALETTE = { skin: 0xffe3d6, top: 0xf9c9dc, pants: 0x7d6873, hair: 0x513c4b, hot: 0xe8789f, edge: 0x45353f };
 
@@ -142,7 +142,7 @@ export class Viewer {
 
   show(key, visible) { if (this.figs[key]) this.figs[key].group.visible = visible; }
 
-  /** 把小人摆成给定的关节位置。glow 0~1 = 发力部位亮多少；effort = 是不是正在最用力（表情变成 > <）；hot = 这个动作哪些部位发力 */
+  /** 把小人摆成给定的关节位置。glow 0~1 = 发力部位亮多少；effort = 是不是正在最用力（表情变成 > <）；hot = 这个动作哪些部位发力、各亮几成，比如 { waist: 1, thigh: 0.5 } */
   pose(key, J, glow = 0, effort = glow > 0.9, hot = HOT_ALL) {
     const f = this.figs[key];
     if (!f || !J) return;
@@ -212,7 +212,7 @@ export class Viewer {
         m.scale.setScalar(0.034);
       });
     }
-    for (const k of HOT_ALL) f.glow[k].color.copy(f.base).lerp(f.hot, hot.includes(k) ? glow : 0);
+    for (const k in HOT_ALL) f.glow[k].color.copy(f.base).lerp(f.hot, glow * (hot[k] ?? 0));
   }
 
   /**

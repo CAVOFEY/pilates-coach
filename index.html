@@ -224,6 +224,7 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
   --home-fg: #fff;
   --home-soft: rgba(255,255,255,.62);
   --art-bg: rgba(255,255,255,.04);
+  --nav: rgba(255,255,255,.14);
   --fig-body: 255,255,255; --fig-hot: 249,160,195; --fig-mat: 143,220,207;
 }
 .home-top { display: flex; align-items: center; justify-content: space-between; }
@@ -234,13 +235,10 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 .art { border-radius: 26px; background: var(--art-bg); padding: 34px 12px 30px; }
 .art canvas { width: 100%; display: block; aspect-ratio: 32 / 15; }
 #home .art { position: relative; touch-action: pan-y; }
-.nav { position: absolute; top: 50%; width: 40px; height: 44px; margin-top: -22px; display: grid; place-items: center; color: var(--home-soft); border-radius: 14px; transition: transform .12s, color .2s; }
+.nav { position: absolute; top: 50%; width: 40px; height: 44px; margin-top: -22px; display: grid; place-items: center; color: var(--nav, #f6cfdf); border-radius: 14px; transition: transform .12s, color .2s; }
 .nav.prev { left: 0; } .nav.next { right: 0; }
 .nav svg { width: 22px; height: 22px; }
-.nav.pressed { color: var(--home-fg); transform: scale(.9); }
-.dots { position: absolute; left: 0; right: 0; bottom: 12px; display: flex; justify-content: center; gap: 7px; color: var(--home-fg); }
-.dots i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .2; transition: opacity .3s, transform .3s var(--out); }
-.dots i.on { opacity: .62; transform: scale(1.3); }
+.nav.pressed { color: var(--home-soft); transform: scale(.9); }
 /* 换动作：新的小人和名字从滑动的方向进来 */
 .swap-next { animation: swapNext .42s var(--out) both; }
 .swap-prev { animation: swapPrev .42s var(--out) both; }
@@ -462,7 +460,6 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
         <canvas id="demoFig" width="640" height="300" aria-label="动作示范动画"></canvas>
         <button class="nav prev" id="btnPrev" aria-label="上一个动作"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <button class="nav next" id="btnNext" aria-label="下一个动作"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        <div class="dots" id="exDots" aria-hidden="true"><i class="on"></i><i></i><i></i></div>
       </div>
       <div class="info"><b id="exName" aria-live="polite">桥式</b><span>约 3 分钟 · 10 次</span></div>
       <button class="go" id="btnStart">开始跟练</button>
@@ -605,6 +602,6 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
   setTimeout(function () { if (!window.__app) report('app.js 4 秒内没有跑起来'); else new Image().src = './__log?' + encodeURIComponent('OK app started | ' + navigator.userAgent); }, 4000);
 })();
 </script>
-<script type="module" src="./app.js?v=18"></script>
+<script type="module" src="./app.js?v=19"></script>
 </body>
 </html>
