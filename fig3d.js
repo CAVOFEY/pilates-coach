@@ -19,6 +19,7 @@ const BONES = [
   ['lHip', 'lKn', 0.088, 0.064, 'pants', 'thigh'], ['lKn', 'lAn', 0.064, 0.047, 'pants', false], ['lAn', 'lToe', 0.05, 0.05, 'skin', false],
   ['rHip', 'rKn', 0.088, 0.064, 'pants', 'thigh'], ['rKn', 'rAn', 0.064, 0.047, 'pants', false], ['rAn', 'rToe', 0.05, 0.05, 'skin', false],
 ];
+const CORE_SPAN = [0.13, 0.72], CORE_R = [0.136, 0.113];   // 核心色块：占躯干的哪一段（0 = 肩，1 = 髋），两头各多粗
 const HOT_ALL = { waist: 1, hip: 1, thigh: 1 };
 const HEAD_R = 0.168, HAND_R = 0.058, BUN_R = 0.07, EDGE = 0.011;
 export const PALETTE = { skin: 0xffe3d6, top: 0xf9c9dc, pants: 0x7d6873, hair: 0x513c4b, hot: 0xe8789f, edge: 0x45353f };
@@ -131,7 +132,6 @@ export class Viewer {
     };
     // 核心：贴在肚皮上的一块椭圆色块，边缘是渐变的。放松时大而柔，收紧时变小、边缘变清楚
     if (solid) {
-      const belly = parts.find((p) => p.core);
       const mat = new T.ShaderMaterial({
         transparent: true, depthWrite: false,
         uniforms: { color: { value: new T.Color(hot) }, size: { value: 1 }, feather: { value: 0.85 }, alpha: { value: 0 } },
@@ -139,13 +139,14 @@ export class Viewer {
         // 圆柱展开后，横向 0.5 处是肚皮正中；椭圆横向占小半圈，纵向几乎占满这一段
         fragmentShader: `uniform vec3 color; uniform float size, feather, alpha; varying vec2 vUv;
           void main() {
-            float d = length((vUv - vec2(0.5)) / (vec2(0.21, 0.5) * size));
+            float d = length((vUv - vec2(0.5)) / (vec2(0.2, 0.52) * size));
             float a = (1.0 - smoothstep(1.0 - feather, 1.0, d)) * alpha;
             if (a < 0.004) discard;
             gl_FragColor = vec4(color, a);
           }`,
       });
-      f.core = add(belly.bone.fill.geometry, mat);
+      // 色块自己是一段略粗的锥形壳，从胸口下面一直包到骨盆上缘
+      f.core = add(this._cone(CORE_R[1] / CORE_R[0]), mat);
       f.core.renderOrder = 3;
     }
     this.scene.add(group);
@@ -197,7 +198,7 @@ export class Viewer {
         W.m.makeBasis(W.x, D, W.z);
         W.off.copy(W.front).multiplyScalar(-p.r * (1 - flat));
       }
-      for (const [m, r] of [[p.bone.fill, p.r], [p.bone.line, p.r + EDGE], [p.core ? f.core : null, p.r + 0.004]]) {
+      for (const [m, r] of [[p.bone.fill, p.r], [p.bone.line, p.r + EDGE]]) {
         if (!m) continue;
         m.position.addVectors(A, B).multiplyScalar(0.5);
         if (p.core) {
@@ -210,6 +211,20 @@ export class Viewer {
         }
       }
       ball(p.ja, A, p.r); ball(p.jb, B, p.rb);
+    }
+    if (f.core) {
+      // 核心色块：从胸口下面到骨盆上缘，肚皮朝外，跟着肚子一起微微下沉
+      A.fromArray(along(CORE_SPAN[0])); B.fromArray(along(CORE_SPAN[1]));
+      D.subVectors(B, A);
+      const len = D.length() || 1e-4, flat = 1 - 0.1 * tuck;
+      D.divideScalar(len);
+      W.front.crossVectors(D, W.side).normalize();
+      W.z.copy(W.front).negate();
+      W.x.crossVectors(D, W.z).normalize();
+      W.m.makeBasis(W.x, D, W.z);
+      f.core.position.addVectors(A, B).multiplyScalar(0.5).addScaledVector(W.front, -CORE_R[0] * (1 - flat));
+      f.core.scale.set(CORE_R[0], len, CORE_R[0] * flat);
+      f.core.quaternion.setFromRotationMatrix(W.m);
     }
     ball(f.hands[0], A.fromArray(J.lWr), HAND_R);
     ball(f.hands[1], A.fromArray(J.rWr), HAND_R);

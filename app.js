@@ -906,11 +906,11 @@ function startFigure(cvId, hostId) {
           path([H, { x: H.x + (K.x - H.x) * 0.32, y: H.y + (K.y - H.y) * 0.32 }]); ctx.stroke();
         }
         // 核心：肚子上的一块椭圆。放松时大而柔，收紧时变小、下沉、边缘变清楚
-        const c = spineAt(0.56), tilt = Math.atan2(sy(H.y) - sy(S.y), sx(H.x) - sx(S.x));
+        const c = spineAt(0.44), tilt = Math.atan2(sy(H.y) - sy(S.y), sx(H.x) - sx(S.x));
         ctx.shadowColor = `rgba(${HOT},${0.55 + 0.4 * glow})`; ctx.shadowBlur = 26 - 18 * glow;
         ctx.fillStyle = `rgba(${HOT},${0.3 + 0.6 * glow})`;
         ctx.beginPath();
-        ctx.ellipse(sx(c.x), sy(c.y) - W * (1.5 - 0.5 * glow), 56 * EX.fit * (1 - 0.34 * glow), 12 * EX.fit * (1 - 0.3 * glow), tilt, 0, Math.PI * 2);
+        ctx.ellipse(sx(c.x), sy(c.y) - W * (1.5 - 0.5 * glow), 82 * EX.fit * (1 - 0.34 * glow), 13 * EX.fit * (1 - 0.3 * glow), tilt, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.restore();
@@ -1004,7 +1004,7 @@ function idealHeelslide(R) {
 /** 标准动作在每段口令里做到几成 */
 const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg === 'hold' ? 1 : seg === 'down' ? 1 - ease(clamp(sec / 3.4, 0, 1)) : 0);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=24'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=25'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
