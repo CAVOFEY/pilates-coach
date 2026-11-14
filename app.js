@@ -849,7 +849,7 @@ function idealTop(R) {
 /** 标准动作在每段口令里抬到几成 */
 const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg === 'hold' ? 1 : seg === 'down' ? 1 - ease(clamp(sec / 3.4, 0, 1)) : 0);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=9'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=10'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -995,8 +995,12 @@ const App = {
     next.style.zIndex = 2;
     if (toIntro) {
       // 讲解页的示范区从首页示范区的位置出发，滑到自己的位置
-      const a = cur.querySelector('.art').getBoundingClientRect(), b = $('introArt').getBoundingClientRect();
       const st = $('introArt').style;
+      const a = cur.querySelector('.art').getBoundingClientRect();
+      // 把讲解页的示范区往下推到和首页示范区同一个高度，两页的方框就在同一个位置
+      st.marginTop = '';
+      st.marginTop = Math.max(0, a.top - $('introArt').getBoundingClientRect().top) + 'px';
+      const b = $('introArt').getBoundingClientRect();
       st.setProperty('--dx', a.left - b.left + 'px'); st.setProperty('--dy', a.top - b.top + 'px');
       st.setProperty('--sx', a.width / (b.width || 1)); st.setProperty('--sy', a.height / (b.height || 1));
       cur.classList.add('leave-fade');
