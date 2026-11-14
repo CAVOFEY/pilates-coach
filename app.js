@@ -356,7 +356,7 @@ const EXERCISES = [
       if ((lineY - b.hip.y) / b.torso > 0.1) c.flag++;
     },
     extra: (c) => (c.flag >= 4 ? 'arch' : c.knee != null && c.knee > 115 ? 'feetFar' : c.knee != null && c.knee < 58 ? 'feetNear' : null),
-    pose: bridgePose, sag: true, fit: 1, hot: { hip: 1, thigh: 1, waist: 0.55 }, glow2d: 'back',   // 主要是臀和大腿后侧，下背和核心帮忙稳住 arrow: { at: 'Hip', dir: 'up' }, cam: { x: 0.4, dist: 2.55 },
+    pose: bridgePose, sag: true, fit: 1, hot: { hip: 1, thigh: 1, waist: 0.55 }, glow2d: 'back', tuck: 0.5,   // 主要是臀和大腿后侧，下背和核心帮忙稳住 arrow: { at: 'Hip', dir: 'up' }, cam: { x: 0.4, dist: 2.55 },
     idealTop: idealBridge,
   },
   {
@@ -384,7 +384,7 @@ const EXERCISES = [
     },
     perfect: '抬腿和放下的全程，试着让腰一直贴着垫子不拱起来。',
     extra: (c) => (c.peakAngle < 72 ? 'over' : null),
-    pose: kneefoldPose, sag: false, fit: 1, hot: { waist: 1, thigh: 0.5 }, glow2d: 'front',   // 深层腹肌稳住骨盆，髋屈肌（大腿根前侧）把腿抬起来；臀部不是重点 arrow: { at: 'Kn', dir: 'up' }, cam: { x: 0.45, dist: 2.6 },
+    pose: kneefoldPose, sag: false, fit: 1, hot: { waist: 1, thigh: 0.5 }, glow2d: 'front', tuck: 1,   // 深层腹肌稳住骨盆，髋屈肌（大腿根前侧）把腿抬起来；臀部不是重点 arrow: { at: 'Kn', dir: 'up' }, cam: { x: 0.45, dist: 2.6 },
     idealTop: idealKneefold,
   },
   {
@@ -409,7 +409,7 @@ const EXERCISES = [
       noHold: '伸直后先停住，等听到“收回”再往回滑。',
     },
     perfect: '伸腿和收回的时候，试着让骨盆一点都不晃。',
-    pose: heelslidePose, sag: false, fit: 0.8, hot: { waist: 1 }, glow2d: 'core',   // 练的是腿在动的时候核心稳住骨盆；腿本身只是在滑 arrow: { at: 'An', dir: 'out' }, cam: { x: 0.62, dist: 3.0, mat: [1.24, 0.63] },   // 腿伸直后比较长：垫子加长，镜头退远
+    pose: heelslidePose, sag: false, fit: 0.8, hot: { waist: 1 }, glow2d: 'core', tuck: 1,   // 练的是腿在动的时候核心稳住骨盆；腿本身只是在滑 arrow: { at: 'An', dir: 'out' }, cam: { x: 0.62, dist: 3.0, mat: [1.24, 0.63] },   // 腿伸直后比较长：垫子加长，镜头退远
     idealTop: idealHeelslide,
   },
 ];
@@ -877,7 +877,7 @@ function startFigure(cvId, hostId) {
       const L = EX.pose(p), g = (k) => L[P[k]];
       const S = g('lSh'), H = g('lHip'), K = g('lKn');
       // 桥式的脊柱不是一块板：抬到一半时下背还贴近垫子，到顶才拉直
-      const sag = EX.sag ? 15 * Math.sin(Math.PI * p) ** 0.9 : 0;
+      const sag = EX.sag ? 15 * Math.sin(Math.PI * p) ** 0.9 : 7 * p;   // 另外两个动作：核心收紧，腰往垫子沉一点
       const C = { x: S.x + (H.x - S.x) * 0.56, y: S.y + (H.y - S.y) * 0.56 + sag };
       const spineAt = (u) => ({
         x: (1 - u) * (1 - u) * S.x + 2 * (1 - u) * u * C.x + u * u * H.x,
@@ -897,8 +897,8 @@ function startFigure(cvId, hostId) {
       if (EX.glow2d === 'back') path([spineAt(0.62), spineAt(0.8), H, half]);       // 下背 → 臀 → 大腿后侧
       else {
         ctx.translate(0, -W * 0.9);                                                 // 肚子这一侧（仰卧时朝上）
-        if (EX.glow2d === 'front') path([spineAt(0.42), spineAt(0.8), H, { x: H.x + (K.x - H.x) * 0.3, y: H.y + (K.y - H.y) * 0.3 }]);   // 腹部 → 大腿根前侧
-        else path([spineAt(0.36), spineAt(0.92)]);                                  // 只有腹部
+        if (EX.glow2d === 'front') path([spineAt(0.4), spineAt(0.6), spineAt(0.8), H, { x: H.x + (K.x - H.x) * 0.3, y: H.y + (K.y - H.y) * 0.3 }]);   // 腹部 → 大腿根前侧
+        else path([spineAt(0.36), spineAt(0.57), spineAt(0.78)]);                   // 只有肚子（髋的上面）
       }
       ctx.stroke();
       ctx.restore();
@@ -934,7 +934,7 @@ function stdJoints(p) {
   const at = (q, z) => [(q.x - 96) * k, (480 - q.y) * k, z];
   const S = g('lSh'), H = g('lHip');
   // 脊柱中段：抬到一半时下背还贴近垫子，到顶才拉直
-  const sag = EX.sag ? 15 * Math.sin(Math.PI * clamp(p, 0, 1)) ** 0.9 : 0;
+  const sag = EX.sag ? 15 * Math.sin(Math.PI * clamp(p, 0, 1)) ** 0.9 : 7 * clamp(p, 0, 1);
   const M = { x: S.x + (H.x - S.x) * 0.53, y: S.y + (H.y - S.y) * 0.53 + sag * 0.5 };
   const wide = { Sh: 0.19, El: 0.25, Wr: 0.26, Hip: 0.11, Kn: 0.11, An: 0.11, Toe: 0.12 };
   const J = { head: at({ x: 58, y: 448 }, 0), spine: at(M, 0) };
@@ -992,7 +992,7 @@ function idealHeelslide(R) {
 /** 标准动作在每段口令里做到几成 */
 const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg === 'hold' ? 1 : seg === 'down' ? 1 - ease(clamp(sec / 3.4, 0, 1)) : 0);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=20'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=21'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -1013,7 +1013,7 @@ const Intro3D = {
             const p = REDUCED ? 1 : c < 2.4 ? io(c / 2.4) : c < 4.4 ? 1 : c < 7 ? 1 - io((c - 4.4) / 2.6) : 0;
             if (this.exId !== EX.id) { this.exId = EX.id; v.frame(EX.cam); }   // 换了动作：镜头对准新动作的范围
             v.arrowAt(stdJoints(p), REDUCED ? null : c, EX.arrow);
-            v.pose('std', stdJoints(p), p, !REDUCED && c >= 1 && c < 5.9, EX.hot);   // 开始抬起 1 秒后做用力的表情，到开始放下 1.5 秒后恢复
+            v.pose('std', stdJoints(p), p, !REDUCED && c >= 1 && c < 5.9, EX.hot, p * EX.tuck);   // 最后一个数：核心收紧多少，肚子跟着变扁   // 开始抬起 1 秒后做用力的表情，到开始放下 1.5 秒后恢复
           };
           v.start();
         }

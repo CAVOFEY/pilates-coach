@@ -11,8 +11,8 @@ export async function load3D() {
 // [起点, 终点, 起点粗细, 终点粗细（半径，米）, 用哪种颜色, 属于哪个发力部位（waist 腰 / hip 臀 / thigh 大腿；false = 不会亮）]
 // 两头粗细不同 = 一头粗一头细的锥形，关节处不会鼓出一个球
 const BONES = [
-  // 胸廓（上衣）比腰宽一圈；腰到髋是高腰瑜伽裤
-  ['midSh', 'spine', 0.128, 0.134, 'top', false], ['spine', 'midHip', 0.106, 0.112, 'pants', 'waist'],
+  // 躯干分三段：胸廓（上衣，比腰宽一圈）→ 肚子（核心，高腰瑜伽裤的裤腰）→ 骨盆（算臀部）
+  ['midSh', 'spine', 0.128, 0.134, 'top', false], ['spine', 'belt', 0.106, 0.11, 'pants', 'waist'], ['belt', 'midHip', 0.11, 0.112, 'pants', 'hip'],
   ['lSh', 'rSh', 0.078, 0.078, 'top', false], ['lHip', 'rHip', 0.104, 0.104, 'pants', 'hip'],
   ['lSh', 'lEl', 0.052, 0.046, 'skin', false], ['lEl', 'lWr', 0.046, 0.041, 'skin', false],
   ['rSh', 'rEl', 0.052, 0.046, 'skin', false], ['rEl', 'rWr', 0.046, 0.041, 'skin', false],
@@ -116,7 +116,7 @@ export class Viewer {
     const pair = (geo, m) => ({ fill: add(geo, m), line: edge ? add(geo, edge) : null });
     const parts = BONES.map(([a, b, r, rb, c, isHot]) => {
       const m = isHot ? glow[isHot] : mats[c];
-      return { a, b, r, rb, bone: pair(this._cone(rb / r), m), ja: pair(this.sph, m), jb: pair(this.sph, m) };
+      return { a, b, r, rb, core: isHot === 'waist', bone: pair(this._cone(rb / r), m), ja: pair(this.sph, m), jb: pair(this.sph, m) };
     });
     const f = {
       group, parts, glow, base: new T.Color(pal.pants), hot: new T.Color(hot),
@@ -142,8 +142,8 @@ export class Viewer {
 
   show(key, visible) { if (this.figs[key]) this.figs[key].group.visible = visible; }
 
-  /** 把小人摆成给定的关节位置。glow 0~1 = 发力部位亮多少；effort = 是不是正在最用力（表情变成 > <）；hot = 这个动作哪些部位发力、各亮几成，比如 { waist: 1, thigh: 0.5 } */
-  pose(key, J, glow = 0, effort = glow > 0.9, hot = HOT_ALL) {
+  /** 把小人摆成给定的关节位置。glow 0~1 = 发力部位亮多少；effort = 是不是正在最用力（表情变成 > <）；hot = 这个动作哪些部位发力、各亮几成，比如 { waist: 1, thigh: 0.5 }；tuck 0~1 = 核心收紧多少（肚子往下塌、变扁） */
+  pose(key, J, glow = 0, effort = glow > 0.9, hot = HOT_ALL, tuck = 0) {
     const f = this.figs[key];
     if (!f || !J) return;
     const T = THREE;
@@ -151,6 +151,10 @@ export class Viewer {
     const UP = this._up ??= new T.Vector3(0, 1, 0);
     const mid = (p, q) => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2, (p[2] + q[2]) / 2];
     const all = { ...J, midSh: mid(J.lSh, J.rSh), midHip: mid(J.lHip, J.rHip) };
+    // 肚子和骨盆的分界：从脊柱中段到髋的六成处
+    all.belt = [0, 1, 2].map((i) => J.spine[i] + (all.midHip[i] - J.spine[i]) * 0.6);
+    const W = this._w ??= { side: new T.Vector3(), front: new T.Vector3(), x: new T.Vector3(), off: new T.Vector3(), m: new T.Matrix4() };
+    W.side.fromArray(J.lSh).sub(v(0).fromArray(J.rSh)).normalize();
     const ball = (p, pos, r) => {
       p.fill.position.copy(pos); p.fill.scale.setScalar(r);
       if (p.line) { p.line.position.copy(pos); p.line.scale.setScalar(r + EDGE); }
@@ -161,13 +165,35 @@ export class Viewer {
       D.subVectors(B, A);
       const len = D.length() || 1e-4;
       D.divideScalar(len);
+      // 肚子这一段在核心收紧时变扁：前后方向变薄、往后背那边沉下去，左右稍微变宽
+      const flat = p.core ? 1 - 0.34 * tuck : 1, wide = p.core ? 1 + 0.07 * tuck : 1;
+      if (flat < 1) {
+        W.front.crossVectors(D, W.side).normalize();          // 肚子朝外的方向
+        W.x.crossVectors(D, W.front).normalize();
+        W.m.makeBasis(W.x, D, W.front);
+        W.off.copy(W.front).multiplyScalar(-p.r * (1 - flat));
+      }
       for (const [m, r] of [[p.bone.fill, p.r], [p.bone.line, p.r + EDGE]]) {
         if (!m) continue;
         m.position.addVectors(A, B).multiplyScalar(0.5);
-        m.scale.set(r, len, r);
-        m.quaternion.setFromUnitVectors(UP, D);
+        if (flat < 1) {
+          m.position.add(W.off);
+          m.scale.set(r * wide, len, r * flat);
+          m.quaternion.setFromRotationMatrix(W.m);
+        } else {
+          m.scale.set(r, len, r);
+          m.quaternion.setFromUnitVectors(UP, D);
+        }
       }
       ball(p.ja, A, p.r); ball(p.jb, B, p.rb);
+      if (flat < 1) {
+        for (const [q, r] of [[p.ja, p.r], [p.jb, p.rb]]) for (const [m, e] of [[q.fill, 0], [q.line, EDGE]]) {
+          if (!m) continue;
+          m.position.add(W.off);
+          m.scale.set((r + e) * wide, r + e, (r + e) * flat);
+          m.quaternion.setFromRotationMatrix(W.m);
+        }
+      }
     }
     ball(f.hands[0], A.fromArray(J.lWr), HAND_R);
     ball(f.hands[1], A.fromArray(J.rWr), HAND_R);
