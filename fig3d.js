@@ -129,6 +129,25 @@ export class Viewer {
         blush: [add(this.sph, new T.MeshBasicMaterial({ color: 0xf7a8c0 })), add(this.sph, new T.MeshBasicMaterial({ color: 0xf7a8c0 }))],
       } : null,
     };
+    // 核心：贴在肚皮上的一块椭圆色块，边缘是渐变的。放松时大而柔，收紧时变小、边缘变清楚
+    if (solid) {
+      const belly = parts.find((p) => p.core);
+      const mat = new T.ShaderMaterial({
+        transparent: true, depthWrite: false,
+        uniforms: { color: { value: new T.Color(hot) }, size: { value: 1 }, feather: { value: 0.85 }, alpha: { value: 0 } },
+        vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        // 圆柱展开后，横向 0.5 处是肚皮正中；椭圆横向占小半圈，纵向几乎占满这一段
+        fragmentShader: `uniform vec3 color; uniform float size, feather, alpha; varying vec2 vUv;
+          void main() {
+            float d = length((vUv - vec2(0.5)) / (vec2(0.21, 0.5) * size));
+            float a = (1.0 - smoothstep(1.0 - feather, 1.0, d)) * alpha;
+            if (a < 0.004) discard;
+            gl_FragColor = vec4(color, a);
+          }`,
+      });
+      f.core = add(belly.bone.fill.geometry, mat);
+      f.core.renderOrder = 3;
+    }
     this.scene.add(group);
     this.figs[key] = f;
     return f;
@@ -142,7 +161,7 @@ export class Viewer {
 
   show(key, visible) { if (this.figs[key]) this.figs[key].group.visible = visible; }
 
-  /** 把小人摆成给定的关节位置。glow 0~1 = 发力部位亮多少；effort = 是不是正在最用力（表情变成 > <）；hot = 这个动作哪些部位发力、各亮几成，比如 { waist: 1, thigh: 0.5 }；tuck 0~1 = 核心收紧多少（肚子往下塌、变扁） */
+  /** 把小人摆成给定的关节位置。glow 0~1 = 发力部位亮多少；effort = 是不是正在最用力（表情变成 > <）；hot = 这个动作哪些部位发力、各亮几成，比如 { waist: 1, thigh: 0.5 }；tuck 0~1 = 核心收紧多少（肚皮微微下沉，核心色块变小、边缘变清楚） */
   pose(key, J, glow = 0, effort = glow > 0.9, hot = HOT_ALL, tuck = 0) {
     const f = this.figs[key];
     if (!f || !J) return;
@@ -157,7 +176,7 @@ export class Viewer {
       return [0, 1, 2].map((i) => p[i] + (q[i] - p[i]) * k);
     };
     all.rib = along(0.36); all.belt = along(0.72);
-    const W = this._w ??= { side: new T.Vector3(), front: new T.Vector3(), x: new T.Vector3(), off: new T.Vector3(), m: new T.Matrix4() };
+    const W = this._w ??= { side: new T.Vector3(), front: new T.Vector3(), x: new T.Vector3(), z: new T.Vector3(), off: new T.Vector3(), m: new T.Matrix4() };
     W.side.fromArray(J.lSh).sub(v(0).fromArray(J.rSh)).normalize();
     const ball = (p, pos, r) => {
       p.fill.position.copy(pos); p.fill.scale.setScalar(r);
@@ -169,20 +188,21 @@ export class Viewer {
       D.subVectors(B, A);
       const len = D.length() || 1e-4;
       D.divideScalar(len);
-      // 肚子这一段在核心收紧时变扁：前后方向变薄、往后背那边沉下去，左右稍微变宽
-      const flat = p.core ? 1 - 0.34 * tuck : 1, wide = p.core ? 1 + 0.07 * tuck : 1;
-      if (flat < 1) {
-        W.front.crossVectors(D, W.side).normalize();          // 肚子朝外的方向
-        W.x.crossVectors(D, W.front).normalize();
-        W.m.makeBasis(W.x, D, W.front);
+      // 肚子这一段：固定朝向（肚皮朝外），核心收紧时只微微下沉一点
+      const flat = p.core ? 1 - 0.1 * tuck : 1;
+      if (p.core) {
+        W.front.crossVectors(D, W.side).normalize();          // 肚皮朝外的方向
+        W.z.copy(W.front).negate();                           // 圆柱贴图的正中（0.5 处）在它自己的 -z 方向，所以把 -z 对准肚皮
+        W.x.crossVectors(D, W.z).normalize();
+        W.m.makeBasis(W.x, D, W.z);
         W.off.copy(W.front).multiplyScalar(-p.r * (1 - flat));
       }
-      for (const [m, r] of [[p.bone.fill, p.r], [p.bone.line, p.r + EDGE]]) {
+      for (const [m, r] of [[p.bone.fill, p.r], [p.bone.line, p.r + EDGE], [p.core ? f.core : null, p.r + 0.004]]) {
         if (!m) continue;
         m.position.addVectors(A, B).multiplyScalar(0.5);
-        if (flat < 1) {
+        if (p.core) {
           m.position.add(W.off);
-          m.scale.set(r * wide, len, r * flat);
+          m.scale.set(r, len, r * flat);
           m.quaternion.setFromRotationMatrix(W.m);
         } else {
           m.scale.set(r, len, r);
@@ -190,14 +210,6 @@ export class Viewer {
         }
       }
       ball(p.ja, A, p.r); ball(p.jb, B, p.rb);
-      if (flat < 1) {
-        for (const [q, r] of [[p.ja, p.r], [p.jb, p.rb]]) for (const [m, e] of [[q.fill, 0], [q.line, EDGE]]) {
-          if (!m) continue;
-          m.position.add(W.off);
-          m.scale.set((r + e) * wide, r + e, (r + e) * flat);
-          m.quaternion.setFromRotationMatrix(W.m);
-        }
-      }
     }
     ball(f.hands[0], A.fromArray(J.lWr), HAND_R);
     ball(f.hands[1], A.fromArray(J.rWr), HAND_R);
@@ -242,7 +254,15 @@ export class Viewer {
         m.scale.setScalar(0.034);
       });
     }
-    for (const k in HOT_ALL) f.glow[k].color.copy(f.base).lerp(f.hot, glow * (hot[k] ?? 0));
+    // 臀、大腿：整段变色。核心（肚子）不整段变色，用肚皮上的椭圆色块表示
+    for (const k in HOT_ALL) f.glow[k].color.copy(f.base).lerp(f.hot, k === 'waist' ? 0 : glow * (hot[k] ?? 0));
+    if (f.core) {
+      const u = f.core.material.uniforms, w = hot.waist ?? 0;
+      u.size.value = 1 - 0.36 * tuck;                 // 收紧：椭圆变小
+      u.feather.value = 0.9 - 0.62 * tuck;            // 收紧：渐变的边缘变窄、变清楚
+      u.alpha.value = w * (0.5 + 0.45 * tuck);        // 收紧：颜色更实
+      f.core.visible = w > 0;
+    }
   }
 
   /**

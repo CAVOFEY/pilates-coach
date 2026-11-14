@@ -883,7 +883,7 @@ function startFigure(cvId, hostId) {
       const L = EX.pose(p), g = (k) => L[P[k]];
       const S = g('lSh'), H = g('lHip'), K = g('lKn');
       // 桥式的脊柱不是一块板：抬到一半时下背还贴近垫子，到顶才拉直
-      const sag = EX.sag ? 15 * Math.sin(Math.PI * p) ** 0.9 : 7 * p;   // 另外两个动作：核心收紧，腰往垫子沉一点
+      const sag = EX.sag ? 15 * Math.sin(Math.PI * p) ** 0.9 : 3 * p;   // 另外两个动作：核心收紧，腰往垫子沉一点点
       const C = { x: S.x + (H.x - S.x) * 0.56, y: S.y + (H.y - S.y) * 0.56 + sag };
       const spineAt = (u) => ({
         x: (1 - u) * (1 - u) * S.x + 2 * (1 - u) * u * C.x + u * u * H.x,
@@ -900,13 +900,19 @@ function startFigure(cvId, hostId) {
       ctx.save();
       ctx.shadowColor = `rgba(${HOT},${0.9 * glow})`; ctx.shadowBlur = 18 + 14 * glow;
       ctx.strokeStyle = `rgba(${HOT},${0.14 + 0.76 * glow})`; ctx.lineWidth = W * (2.2 + 0.6 * glow);
-      if (EX.glow2d === 'back') path([spineAt(0.62), spineAt(0.8), H, half]);       // 下背 → 臀 → 大腿后侧
+      if (EX.glow2d === 'back') { path([spineAt(0.62), spineAt(0.8), H, half]); ctx.stroke(); }   // 下背 → 臀 → 大腿后侧
       else {
-        ctx.translate(0, -W * 0.9);                                                 // 肚子这一侧（仰卧时朝上）
-        if (EX.glow2d === 'front') path([spineAt(0.4), spineAt(0.6), spineAt(0.8), H, { x: H.x + (K.x - H.x) * 0.3, y: H.y + (K.y - H.y) * 0.3 }]);   // 腹部 → 大腿根前侧
-        else path([spineAt(0.36), spineAt(0.57), spineAt(0.78)]);                   // 只有肚子（髋的上面）
+        if (EX.glow2d === 'front') {                                                // 大腿根前侧（把腿抬起来的髋屈肌）
+          path([H, { x: H.x + (K.x - H.x) * 0.32, y: H.y + (K.y - H.y) * 0.32 }]); ctx.stroke();
+        }
+        // 核心：肚子上的一块椭圆。放松时大而柔，收紧时变小、下沉、边缘变清楚
+        const c = spineAt(0.56), tilt = Math.atan2(sy(H.y) - sy(S.y), sx(H.x) - sx(S.x));
+        ctx.shadowColor = `rgba(${HOT},${0.55 + 0.4 * glow})`; ctx.shadowBlur = 26 - 18 * glow;
+        ctx.fillStyle = `rgba(${HOT},${0.3 + 0.6 * glow})`;
+        ctx.beginPath();
+        ctx.ellipse(sx(c.x), sy(c.y) - W * (1.5 - 0.5 * glow), 56 * EX.fit * (1 - 0.34 * glow), 12 * EX.fit * (1 - 0.3 * glow), tilt, 0, Math.PI * 2);
+        ctx.fill();
       }
-      ctx.stroke();
       ctx.restore();
       // 身体：一笔连贯的线
       ctx.strokeStyle = BODY; ctx.lineWidth = W;
@@ -940,7 +946,7 @@ function stdJoints(p) {
   const at = (q, z) => [(q.x - 96) * k, (480 - q.y) * k, z];
   const S = g('lSh'), H = g('lHip');
   // 脊柱中段：抬到一半时下背还贴近垫子，到顶才拉直
-  const sag = EX.sag ? 15 * Math.sin(Math.PI * clamp(p, 0, 1)) ** 0.9 : 7 * clamp(p, 0, 1);
+  const sag = EX.sag ? 15 * Math.sin(Math.PI * clamp(p, 0, 1)) ** 0.9 : 3 * clamp(p, 0, 1);
   const M = { x: S.x + (H.x - S.x) * 0.53, y: S.y + (H.y - S.y) * 0.53 + sag * 0.5 };
   const wide = { Sh: 0.19, El: 0.25, Wr: 0.26, Hip: 0.11, Kn: 0.11, An: 0.11, Toe: 0.12 };
   const J = { head: at({ x: 58, y: 448 }, 0), spine: at(M, 0) };
@@ -998,7 +1004,7 @@ function idealHeelslide(R) {
 /** 标准动作在每段口令里做到几成 */
 const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg === 'hold' ? 1 : seg === 'down' ? 1 - ease(clamp(sec / 3.4, 0, 1)) : 0);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=23'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=24'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
