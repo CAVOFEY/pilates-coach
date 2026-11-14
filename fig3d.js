@@ -180,12 +180,12 @@ export class Viewer {
         m.visible = effort;
         if (!effort) return;
         const s = n < 2 ? 1 : -1, dir = n % 2 ? 1 : -1;
-        onFace(A, s, 0.24, 0.02);                 // 尖角（靠鼻子）
-        onFace(B, s, 0.52, 0.02 + dir * 0.17);    // 外侧上 / 下
+        onFace(A, s, 0.2, 0.02);                 // 尖角（靠鼻子）
+        onFace(B, s, 0.58, 0.02 + dir * 0.22);    // 外侧上 / 下
         D.subVectors(B, A);
         const len = D.length();
         m.position.addVectors(A, B).multiplyScalar(0.5);
-        m.scale.set(0.0085, len, 0.0085);
+        m.scale.set(0.011, len, 0.011);
         m.quaternion.setFromUnitVectors(UP, D.divideScalar(len));
       });
       f.face.blush.forEach((m, i) => {
