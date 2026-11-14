@@ -12,7 +12,7 @@ export async function load3D() {
 // 两头粗细不同 = 一头粗一头细的锥形，关节处不会鼓出一个球
 const BONES = [
   // 躯干分三段：胸廓（上衣，比腰宽一圈）→ 肚子（核心，高腰瑜伽裤的裤腰）→ 骨盆（算臀部）
-  ['midSh', 'spine', 0.128, 0.134, 'top', false], ['spine', 'belt', 0.106, 0.11, 'pants', 'waist'], ['belt', 'midHip', 0.11, 0.112, 'pants', 'hip'],
+  ['midSh', 'rib', 0.13, 0.12, 'top', false], ['rib', 'belt', 0.104, 0.108, 'pants', 'waist'], ['belt', 'midHip', 0.11, 0.112, 'pants', 'hip'],
   ['lSh', 'rSh', 0.078, 0.078, 'top', false], ['lHip', 'rHip', 0.104, 0.104, 'pants', 'hip'],
   ['lSh', 'lEl', 0.052, 0.046, 'skin', false], ['lEl', 'lWr', 0.046, 0.041, 'skin', false],
   ['rSh', 'rEl', 0.052, 0.046, 'skin', false], ['rEl', 'rWr', 0.046, 0.041, 'skin', false],
@@ -151,8 +151,12 @@ export class Viewer {
     const UP = this._up ??= new T.Vector3(0, 1, 0);
     const mid = (p, q) => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2, (p[2] + q[2]) / 2];
     const all = { ...J, midSh: mid(J.lSh, J.rSh), midHip: mid(J.lHip, J.rHip) };
-    // 肚子和骨盆的分界：从脊柱中段到髋的六成处
-    all.belt = [0, 1, 2].map((i) => J.spine[i] + (all.midHip[i] - J.spine[i]) * 0.6);
+    // 躯干从肩到髋，中间经过脊柱中段（在 53% 处）。肚子占其中 36%～72% 这一段：肋骨下缘到骨盆上缘
+    const along = (u) => {
+      const [p, q, k] = u < 0.53 ? [all.midSh, J.spine, u / 0.53] : [J.spine, all.midHip, (u - 0.53) / 0.47];
+      return [0, 1, 2].map((i) => p[i] + (q[i] - p[i]) * k);
+    };
+    all.rib = along(0.36); all.belt = along(0.72);
     const W = this._w ??= { side: new T.Vector3(), front: new T.Vector3(), x: new T.Vector3(), off: new T.Vector3(), m: new T.Matrix4() };
     W.side.fromArray(J.lSh).sub(v(0).fromArray(J.rSh)).normalize();
     const ball = (p, pos, r) => {
