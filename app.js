@@ -849,7 +849,7 @@ function idealTop(R) {
 /** 标准动作在每段口令里抬到几成 */
 const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg === 'hold' ? 1 : seg === 'down' ? 1 - ease(clamp(sec / 3.4, 0, 1)) : 0);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=10'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=11'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -869,6 +869,12 @@ const Intro3D = {
             const c = (now / 1000) % 8.6;
             const p = REDUCED ? 1 : c < 2.4 ? io(c / 2.4) : c < 4.4 ? 1 : c < 7 ? 1 - io((c - 4.4) / 2.6) : 0;
             v.arrowAt(stdJoints(p), REDUCED ? null : c);
+            // 小人做到哪一拍，下面对应的那一行亮起来
+            const beat = REDUCED ? -1 : c < 2.4 ? 1 : c < 4.4 ? 2 : c < 7 ? 3 : 0;
+            if (beat !== this.beat) {
+              this.beat = beat;
+              [...$('introSteps').children].forEach((li, i) => li.classList.toggle('on', i === beat));
+            }
             v.pose('std', stdJoints(p), p, !REDUCED && c >= 1 && c < 5.9);   // 开始抬起 1 秒后做用力的表情，到开始放下 1.5 秒后恢复
           };
           v.start();
@@ -997,9 +1003,11 @@ const App = {
       // 讲解页的示范区从首页示范区的位置出发，滑到自己的位置
       const st = $('introArt').style;
       const a = cur.querySelector('.art').getBoundingClientRect();
-      // 把讲解页的示范区往下推到和首页示范区同一个高度，两页的方框就在同一个位置
-      st.marginTop = '';
-      st.marginTop = Math.max(0, a.top - $('introArt').getBoundingClientRect().top) + 'px';
+      // 把讲解页的内容往下推，让示范区和首页示范区在同一个高度，两页的方框就在同一个位置
+      // 多出来的空当放在标题上面，标题和标签紧挨着方框
+      const h1 = next.querySelector('h1').style;
+      h1.marginTop = '';
+      h1.marginTop = Math.max(0, a.top - $('introArt').getBoundingClientRect().top) + 'px';
       const b = $('introArt').getBoundingClientRect();
       st.setProperty('--dx', a.left - b.left + 'px'); st.setProperty('--dy', a.top - b.top + 'px');
       st.setProperty('--sx', a.width / (b.width || 1)); st.setProperty('--sy', a.height / (b.height || 1));
