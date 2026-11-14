@@ -125,11 +125,13 @@ const Rec = {
     };
     const sec = Math.floor((t - this.t0) / 1000);
     label(hud, u * 1.2, u * 1.6, 'left', 'rgba(30,22,34,.6)');
-    label(`${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`, W - u * 1.2, u * 1.6, 'right', 'rgba(30,22,34,.6)');
+    const tech = runInfo.delegate ? ` · ${runInfo.model} ${runInfo.delegate} ${Math.round(runInfo.detectMs)}ms` : '';
+    label(`${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}${tech}`, W - u * 1.2, u * 1.6, 'right', 'rgba(30,22,34,.6)');
     if (this.caption && t - this.capAt < 4500) {
       // 太长的话分两行
       const max = Math.floor((W - u * 3) / u);
-      const lines = this.caption.length > max ? [this.caption.slice(0, max), this.caption.slice(max, max * 2)] : [this.caption];
+      const cut = Math.ceil(this.caption.length / 2);
+      const lines = this.caption.length > max ? [this.caption.slice(0, cut), this.caption.slice(cut)] : [this.caption];
       lines.forEach((ln, i) => label('教练：' + ln, W / 2, H - u * 1.8 - (lines.length - 1 - i) * u * 1.9, 'center', 'rgba(215,92,136,.88)'));
     }
   },
@@ -275,6 +277,16 @@ class SetupGuide {
       this.readySince = null;
       return this.hint('head', '看不到你的头和肩，调一下手机角度。', t);
     }
+    // 身体贴着画面下边或上边时，髋和肩容易被认错位置
+    const ys = [b.shoulder.y, b.hip.y, b.ankle.y], H = App.size.h;
+    if (Math.max(...ys) > H * 0.9) {
+      this.readySince = null;
+      return this.hint('low', '你太靠画面下边了。把手机往下压一点，让身体在画面中间。', t);
+    }
+    if (Math.min(...ys, b.knee.y) < H * 0.06) {
+      this.readySince = null;
+      return this.hint('high', '你太靠画面上边了。把手机往上抬一点，让身体在画面中间。', t);
+    }
     const lying = b.torsoTilt < 35;
     const kneesBent = b.kneeAngle != null && b.kneeAngle > 40 && b.kneeAngle < 140;
     if (!lying) {
@@ -314,7 +326,7 @@ const CUES = {
 const ISSUE_NAMES = {
   miss: '没跟上', low: '没抬到位', arch: '用腰顶', feetFar: '脚踩得太远', feetNear: '脚踩得太近', fast: '抬得太快', noHold: '顶端没停住',
 };
-const TOP_ANGLE = 165;   // 肩-髋-膝夹角达到这个值算“抬到位”
+const TOP_ANGLE = 160;   // 肩-髋-膝夹角达到这个值算“抬到位”（理想是 170 以上，留出识别误差）
 const FULL_ANGLE = 176;
 
 class BridgeCoach {
@@ -533,6 +545,9 @@ async function fetchBytes(urls, label) {
   return bytes;
 }
 const ASSET_VERSION = 'tasks-vision-0.10.21';
+// 识别模型：full 比 lite 准（尤其是躺着、衣服宽松时的髋部），文件大 3.6 MB，稍慢。网址加 ?model=lite 可切回
+const MODEL_NAME = new URLSearchParams(location.search).get('model') === 'lite' ? 'pose_landmarker_lite.task' : 'pose_landmarker_full.task';
+const runInfo = { model: MODEL_NAME.replace(/pose_landmarker_|\.task/g, ''), delegate: '', detectMs: 0 };
 async function downloadBytes(urls, label) {
   const tries = urls.map((url) => {
     const ctl = new AbortController();
@@ -575,8 +590,8 @@ function loadModel() {
       'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm/' + wasmName,
     ], '第 1 步 / 共 3 步：识别程序').catch((e) => { debugNote('预下载识别程序', e); return null; });
     const modelJob = fetchBytes([
-      base + 'pose_landmarker_lite.task',
-      'https://cdn.jsdelivr.net/gh/CAVOFEY/pilates-coach@main/vendor/pose_landmarker_lite.task',
+      base + MODEL_NAME,
+      'https://cdn.jsdelivr.net/gh/CAVOFEY/pilates-coach@main/vendor/' + MODEL_NAME,
     ], '第 2 步 / 共 3 步：识别模型').catch((e) => { debugNote('预下载识别模型', e); return null; });
     const wasm = await wasmJob;
     // 下好的识别程序直接交给识别库，不让它再下一遍
@@ -584,18 +599,22 @@ function loadModel() {
     model = await modelJob;
     const make = (delegate) =>
       PoseLandmarker.createFromOptions(fileset, {
-        baseOptions: { ...(model ? { modelAssetBuffer: model } : { modelAssetPath: base + 'pose_landmarker_lite.task' }), delegate },
+        baseOptions: { ...(model ? { modelAssetBuffer: model } : { modelAssetPath: base + MODEL_NAME }), delegate },
         runningMode: 'VIDEO',
         numPoses: 1,
       });
     setLoadStatus('第 3 步 / 共 3 步：启动识别（显卡加速）…');
     try {
-      return await withTimeout(make('GPU'), 15000, 'GPU 启动超时');
+      const m = await withTimeout(make('GPU'), 15000, 'GPU 启动超时');
+      runInfo.delegate = 'GPU';
+      return m;
     } catch (e) {
       debugNote('显卡加速启动', e);
       setLoadStatus('第 3 步 / 共 3 步：启动识别（兼容模式）…');
       try {
-        return await withTimeout(make('CPU'), 45000, '识别模型启动超时。请刷新页面再试一次。');
+        const m = await withTimeout(make('CPU'), 45000, '识别模型启动超时。请刷新页面再试一次。');
+        runInfo.delegate = 'CPU';
+        return m;
       } catch (e2) { debugNote('兼容模式启动', e2); throw e2; }
     }
   })().then((m) => { setLoadStatus('识别已就绪，正在等待摄像头…'); return m; })
@@ -656,6 +675,8 @@ class CameraSource {
         lastDetect = t; lastVideoTime = video.currentTime;
         try {
           const res = landmarker.detectForVideo(video, t);
+          const cost = performance.now() - t;
+          runInfo.detectMs = runInfo.detectMs ? runInfo.detectMs * 0.9 + cost * 0.1 : cost;
           const raw = res.landmarks?.[0];
           lms = raw ? raw.map((p) => ({ x: p.x * w, y: p.y * h, v: p.visibility ?? 0 })) : null;
         } catch (e) { console.warn('detect failed', e); }
@@ -860,9 +881,12 @@ const App = {
     this.coach = null;
     try {
       const resize = (w, h) => {
+        const turned = this.size.w !== w || this.size.h !== h;
         this.size = { w, h };
         const cv = $('overlay'); cv.width = w; cv.height = h;
         this.fitView();
+        // 摆放阶段转了手机：录像按新的方向重新开始，免得横画面缩在竖视频中间
+        if (turned && this.phase === 'setup') Rec.start(w, h);
       };
       const info = await this.source.start((lms, t) => this.onFrame(lms, t), (lms) => this.draw(lms), resize);
       $('view').classList.toggle('mirror', info.mirror);
@@ -941,7 +965,7 @@ const App = {
     this.lastRun = s && {
       at: new Date().toISOString(), mode: this.mode, facing: this.facing, video: this.size,
       screen: [innerWidth, innerHeight], rest: Math.round(this.coach.rest), startThr: Math.round(this.coach.startThr),
-      topAngle: TOP_ANGLE, tempo: TEMPO, good: s.good, attempts: s.attempts, seconds: Math.round(s.seconds),
+      topAngle: TOP_ANGLE, tempo: TEMPO, model: runInfo.model, delegate: runInfo.delegate, detectMs: Math.round(runInfo.detectMs), good: s.good, attempts: s.attempts, seconds: Math.round(s.seconds),
       reps: s.reps.map((r) => ({ ...r, peak: Math.round(r.peak), dur: Math.round(r.dur * 10) / 10 })),
       ua: navigator.userAgent,
     };
