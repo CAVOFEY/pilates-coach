@@ -8,7 +8,7 @@
 /* 中文字体：OPPO Sans 4.0（可变字重 100–700），已裁剪到只含页面用到的字。改了文字后运行 tools/subset_font.py */
 @font-face {
   font-family: "OPPO Sans";
-  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=30") format("woff2");
+  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=31") format("woff2");
   font-weight: 100 700;
   font-display: swap;
 }
@@ -262,6 +262,75 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 }
 #home .btn-link { color: var(--home-soft); margin-top: -8px; }
 
+/* ================= 底部三个圆按钮：计划 / 跟练 / 我的 ================= */
+#home { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+.home-mid { gap: 18px; padding-bottom: 0; }
+#tabs { position: absolute; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 16px; height: 66px; }
+#tabs .tab { width: 46px; height: 46px; flex: none; border-radius: 50%; display: grid; place-items: center; color: var(--ink-soft); background: #fff; box-shadow: 0 6px 18px rgba(120, 70, 100, .16), 0 0 0 1px rgba(240, 220, 230, .9);
+  transition: width .46s var(--out), height .46s var(--out), background-color .3s, color .3s, box-shadow .3s, transform .2s var(--out); }
+#tabs .tab svg { width: 22px; height: 22px; transition: transform .46s var(--out); }
+#tabs .tab.on { width: 66px; height: 66px; color: #fff; background: linear-gradient(135deg, #f6b4cc, #e8789f); box-shadow: 0 10px 24px rgba(232, 120, 159, .45), 0 0 0 1px rgba(255, 255, 255, .5) inset; }
+#tabs .tab.on svg { transform: scale(1.3); }
+#tabs .tab:active { transform: scale(.92); }
+
+/* ---------- 首页：今日计划 ---------- */
+.tplan { display: flex; align-items: center; gap: 10px; min-height: 54px; padding: 8px 8px 8px 18px; border-radius: 999px; background: var(--art-bg); color: var(--home-fg); text-align: left; }
+.tplan .tx { flex: 1; min-width: 0; }
+.tplan small { display: block; font-size: 11px; letter-spacing: .14em; color: var(--home-soft); }
+.tplan b { display: block; margin-top: 2px; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tplan em { flex: none; min-height: 38px; padding: 0 18px; border-radius: 999px; display: grid; place-items: center; font-style: normal; font-size: 14px; font-weight: 600; background: var(--pink-500); color: #fff; }
+.tplan.done em { background: var(--teal-100); color: var(--teal-700); }
+
+/* ---------- 计划页、个人页 ---------- */
+#plan, #me { overflow-y: auto; padding: max(30px, env(safe-area-inset-top)) 22px calc(116px + env(safe-area-inset-bottom)); gap: 18px; }
+.sub { margin: -10px 0 0; font-size: 14px; line-height: 1.6; color: var(--ink-soft); }
+.card { flex: none; background: #fff; border: 1.5px solid var(--line); border-radius: var(--r-md); padding: 16px 14px; display: flex; flex-direction: column; gap: 12px; }
+.card h2 { font-size: 16px; display: flex; align-items: baseline; justify-content: space-between; }
+.card h2 small { font-weight: 500; font-size: 12px; color: var(--ink-soft); }
+.hintline { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-soft); }
+.days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; padding-bottom: 6px; }
+.day { position: relative; aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; font-size: 14px; font-weight: 600; background: var(--pink-50); color: var(--ink-soft); }
+.day.on { background: var(--pink-500); color: #fff; box-shadow: 0 6px 14px rgba(232, 120, 159, .35); }
+.day.today::after { content: ""; position: absolute; left: 50%; bottom: -8px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--teal-500); }
+.pitem { display: flex; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.pitem:first-child { padding-top: 0; border-top: 0; }
+.pitem .nm { flex: 1; min-width: 0; }
+.pitem .nm b { display: block; font-size: 16px; font-weight: 600; }
+.pitem .nm small { display: block; margin-top: 2px; font-size: 12px; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stepper { flex: none; display: flex; align-items: center; padding: 3px; border-radius: 999px; background: var(--pink-50); }
+.stepper button { width: 34px; height: 34px; border-radius: 50%; background: #fff; font-family: var(--font-num); font-size: 19px; font-weight: 700; line-height: 1; color: var(--pink-600); box-shadow: 0 2px 6px rgba(120, 70, 100, .1); }
+.stepper button:disabled { opacity: .35; }
+.stepper output { min-width: 40px; text-align: center; font-family: var(--font-num); font-weight: 700; font-size: 17px; font-variant-numeric: tabular-nums; }
+.stepper output small { font-family: var(--font); font-size: 11px; font-weight: 500; color: var(--ink-soft); margin-left: 1px; }
+.pitem .del { flex: none; width: 30px; height: 34px; display: grid; place-items: center; color: #c9b6c2; }
+.pitem .del svg { width: 16px; height: 16px; }
+.adds { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { min-height: 38px; padding: 0 14px; border-radius: 999px; font-size: 14px; font-weight: 500; background: var(--teal-50); color: var(--teal-700); border: 1.5px dashed var(--teal-300); }
+.chip.solid { border-style: solid; background: #fff; text-align: left; min-height: 0; padding: 10px 14px; border-radius: 16px; line-height: 1.5; flex: 1 1 100%; }
+.chip.solid b { display: block; font-weight: 600; color: var(--ink); }
+.total { margin: 0; padding-top: 12px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; color: var(--ink-soft); }
+.total b { font-family: var(--font-num); font-size: 15px; color: var(--ink); }
+.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.wd { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); }
+.wd i { width: 28px; height: 28px; border-radius: 50%; background: var(--pink-50); border: 1.5px solid transparent; display: grid; place-items: center; }
+.wd.plan i { border: 1.5px dashed var(--pink-200); background: #fff; }
+.wd.did i { background: var(--teal-300); border-color: transparent; }
+.wd.did i::after { content: ""; width: 9px; height: 5px; margin-top: -2px; border-left: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(-45deg); }
+.wd.today { color: var(--ink); font-weight: 700; }
+.logitem { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 6px 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+.logitem:first-child { padding-top: 0; border-top: 0; }
+.logitem b { font-size: 15px; font-weight: 600; }
+.logitem b small { margin-left: 8px; font-size: 12px; font-weight: 500; color: var(--ink-soft); }
+.logitem .sc { font-family: var(--font-num); font-weight: 700; font-size: 16px; color: var(--pink-600); }
+.logitem .sc.full { color: var(--teal-700); }
+.logitem .sc small { font-family: var(--font); font-size: 11px; font-weight: 500; color: var(--ink-soft); margin-left: 3px; }
+.logitem p { grid-column: 1 / -1; margin: 0; font-size: 12px; color: var(--ink-soft); }
+.dots { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
+.dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--teal-300); }
+.dots i.bad { background: var(--pink-500); }
+.empty { margin: 0; padding: 18px 6px; text-align: center; font-size: 14px; line-height: 1.7; color: var(--ink-soft); }
+#me .btn-link { font-size: 13px; color: var(--ink-soft); }
+
 /* ================= 动效 =================
    主角：首页小人的一次呼吸（抬起、停住、放下），“开始跟练”的光跟着同一口气起伏。
    其余只做三件事：交代页面去向、确认操作、标出状态变化。 */
@@ -468,6 +537,10 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
         <button class="nav next" id="btnNext" aria-label="下一个动作"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </div>
       <div class="info"><b id="exName" aria-live="polite">桥式</b><span>约 3 分钟 · 10 次</span></div>
+      <button class="tplan" id="todayPlan" hidden>
+        <span class="tx"><small id="todayHead">今日计划</small><b id="todayText"></b></span>
+        <em id="todayGo">开始</em>
+      </button>
       <button class="go" id="btnStart">开始跟练</button>
       <button class="btn btn-link" id="btnDemo">先看演示</button>
     </div>
@@ -586,6 +659,56 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
     </div>
   </section>
 
+  <!-- 训练计划：每周哪几天练、每次练什么 -->
+  <section class="screen" id="plan" hidden>
+    <h1>训练计划</h1>
+    <p class="sub">定好哪几天练、每次练什么。到了训练日，首页会出现今日计划。</p>
+    <div class="card">
+      <h2>每周哪几天练 <small id="planDayCount"></small></h2>
+      <div class="days" id="planDays"></div>
+      <p class="hintline">刚开始建议每周 2 到 3 天，中间隔一天休息。</p>
+    </div>
+    <div class="card">
+      <h2>每次练什么 <small id="planItemCount"></small></h2>
+      <div id="planItems"></div>
+      <div class="adds" id="planAdds"></div>
+      <p class="total"><span>每次合计</span><b id="planTotal"></b></p>
+      <p class="hintline">普拉提讲究少而准：每个动作 5 到 10 次，做慢、做到位，比多做几次有用。</p>
+    </div>
+    <div class="card">
+      <h2>不知道怎么排？</h2>
+      <div class="adds" id="planPresets"></div>
+    </div>
+    <p class="hintline" style="text-align:center">改动会自动保存在这台手机里。</p>
+  </section>
+
+  <!-- 我的：这周练了几天、过去每一次的报告 -->
+  <section class="screen" id="me" hidden>
+    <h1>我的</h1>
+    <div class="stats">
+      <div class="stat"><b id="meCount">0</b><span>累计训练</span></div>
+      <div class="stat"><b id="meWeek">0</b><span>本周练了</span></div>
+      <div class="stat"><b id="meRate">–</b><span>动作标准率</span></div>
+    </div>
+    <div class="card">
+      <h2>这一周 <small>虚线圈是计划要练的日子</small></h2>
+      <div class="week" id="meWeekRow"></div>
+    </div>
+    <div class="card">
+      <h2>训练记录 <small id="meLogCount"></small></h2>
+      <div id="meLog"></div>
+    </div>
+    <button class="btn btn-link" id="btnClearLog" hidden>清空记录</button>
+    <p class="hintline" style="text-align:center">记录只存在这台手机的浏览器里，没有上传。</p>
+  </section>
+
+  <!-- 底部导航：计划 / 跟练 / 我的 -->
+  <nav id="tabs" aria-label="页面切换">
+    <button class="tab" data-tab="plan" aria-label="训练计划"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5.5" width="16" height="14.5" rx="3.5"/><path d="M8 3.5v4M16 3.5v4M8.6 13.4l2.3 2.3 4.5-4.6"/></svg></button>
+    <button class="tab on" data-tab="home" aria-label="开始跟练"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 17.5 10.5 9.5 20.5 17.5"/><circle cx="5" cy="13" r="1.6" fill="currentColor" stroke="none"/></svg></button>
+    <button class="tab" data-tab="me" aria-label="我的"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.8 20c.9-3.6 3.7-5.4 7.2-5.4s6.3 1.8 7.2 5.4"/></svg></button>
+  </nav>
+
 </div>
 <script>
 // 调试用：把页面报错显示在屏幕底部，并发回电脑上的服务器
@@ -610,6 +733,6 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
 })();
 </script>
 <link rel="modulepreload" href="./vendor/three.module.min.js">
-<script type="module" src="./app.js?v=30"></script>
+<script type="module" src="./app.js?v=31"></script>
 </body>
 </html>

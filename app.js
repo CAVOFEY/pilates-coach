@@ -3,7 +3,7 @@
 // 骨架识别用 Google MediaPipe Pose（开源模型，本地运行）；动作标准判定和教练逻辑是本项目自己写的。
 
 const $ = (id) => document.getElementById(id);
-const TARGET_REPS = 10;
+let TARGET_REPS = 10;   // 自由练习一组 10 次；按计划练时换成计划里定的次数
 
 // MediaPipe 33 个点里我们用到的 19 个
 const P = {
@@ -1047,7 +1047,7 @@ const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg
 /** 这个动作“标准”的角度范围 [小, 大] */
 const stdRange = (ex) => (ex.id === 'kneefold' ? [72, ex.top] : [ex.top, 180]);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=30'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=31'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -1210,7 +1210,124 @@ const IntroTalk = {
   },
   stop() { this.run++; clearTimeout(this.timer); this.keep = []; this.mark(-1); Voice.stop(); },
 };
+// ---------- 计划和训练记录：都只存在这台手机的浏览器里 ----------
+const Store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* 存不了就只在这一次打开期间有效 */ } },
+};
+const dayKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const exById = (id) => EXERCISES.find((e) => e.id === id);
+const REP_SEC = TEMPO.up + TEMPO.hold + TEMPO.down + TEMPO.rest;      // 做一次要多少秒
+const WEEK = [[1, '一'], [2, '二'], [3, '三'], [4, '四'], [5, '五'], [6, '六'], [0, '日']];   // [Date.getDay() 的数, 显示的字]
+const Log = {
+  list: Store.get('pilates.log', []),
+  add(r) { this.list.unshift(r); this.list.length = Math.min(this.list.length, 80); Store.set('pilates.log', this.list); },
+  clear() { this.list = []; Store.set('pilates.log', this.list); },
+};
+const Plan = {
+  data: { days: [], items: [], ...Store.get('pilates.plan', {}) },    // days = 每周哪几天，items = [{ id 动作, reps 次数 }]
+  save() { Store.set('pilates.plan', this.data); },
+  /** 今天要练的；今天不是训练日就是空的 */
+  today() { return this.data.days.includes(new Date().getDay()) ? this.data.items.filter((it) => exById(it.id)) : []; },
+  /** 今天已经练完了计划里的第几项 */
+  doneSet() { const k = dayKey() + '#'; return new Set(Log.list.filter((r) => r.plan?.startsWith(k)).map((r) => Number(r.plan.slice(k.length)))); },
+  /** 今天下一项该练第几个；-1 = 没有了 */
+  next() { const done = this.doneSet(); return this.today().findIndex((_, i) => !done.has(i)); },
+};
+const PRESETS = [
+  { name: '入门', note: '每周 3 天（一三五），三个动作各 5 次', days: [1, 3, 5], reps: 5 },
+  { name: '进阶', note: '每周 4 天（一二四六），三个动作各 8 次', days: [1, 2, 4, 6], reps: 8 },
+];
+const PlanUI = {
+  render() {
+    const p = Plan.data, today = new Date().getDay();
+    $('planDayCount').textContent = p.days.length ? `每周 ${p.days.length} 天` : '还没选';
+    $('planDays').innerHTML = WEEK.map(([d, w]) =>
+      `<button class="day${p.days.includes(d) ? ' on' : ''}${d === today ? ' today' : ''}" data-d="${d}" aria-pressed="${p.days.includes(d)}" aria-label="星期${w}">${w}</button>`).join('');
+    $('planItemCount').textContent = p.items.length ? `${p.items.length} 个动作` : '还没选';
+    $('planItems').innerHTML = p.items.map((it, i) => {
+      const ex = exById(it.id);
+      return ex ? `<div class="pitem"><span class="nm"><b>${ex.name}</b><small>${ex.muscles.join(' · ')}</small></span>
+        <span class="stepper"><button data-i="${i}" data-step="-1" aria-label="${ex.name}少一次"${it.reps <= 3 ? ' disabled' : ''}>−</button><output>${it.reps}<small>次</small></output><button data-i="${i}" data-step="1" aria-label="${ex.name}多一次"${it.reps >= 15 ? ' disabled' : ''}>+</button></span>
+        <button class="del" data-del="${i}" aria-label="去掉${ex.name}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></div>` : '';
+    }).join('') || '<p class="empty">还没有动作。点下面的按钮加进来。</p>';
+    $('planAdds').innerHTML = p.items.length >= 8 ? '' : EXERCISES.map((ex) => `<button class="chip" data-add="${ex.id}">+ ${ex.name}</button>`).join('');
+    const n = p.items.reduce((sum, it) => sum + it.reps, 0);
+    $('planTotal').textContent = n ? `${n} 次 · 约 ${Math.max(1, Math.round((n * REP_SEC) / 60))} 分钟` : '–';
+    $('planPresets').innerHTML = PRESETS.map((x, i) => `<button class="chip solid" data-preset="${i}"><b>${x.name}</b>${x.note}</button>`).join('');
+  },
+  click(e) {
+    const el = e.target.closest('button');
+    if (!el) return;
+    const p = Plan.data, d = el.dataset;
+    if (d.d != null) { const n = Number(d.d); p.days = p.days.includes(n) ? p.days.filter((x) => x !== n) : [...p.days, n]; }
+    else if (d.step) { const it = p.items[d.i]; it.reps = clamp(it.reps + Number(d.step), 3, 15); }
+    else if (d.del != null) p.items.splice(Number(d.del), 1);
+    else if (d.add) p.items.push({ id: d.add, reps: 5 });
+    else if (d.preset != null) { const x = PRESETS[d.preset]; p.days = [...x.days]; p.items = EXERCISES.map((ex) => ({ id: ex.id, reps: x.reps })); }
+    else return;
+    Plan.save();
+    this.render();
+  },
+};
+const MeUI = {
+  render() {
+    const list = Log.list, now = new Date();
+    // 这一周（周一到周日）每天的日期
+    const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+    const week = WEEK.map(([d, w], i) => ({ d, w, key: dayKey(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + i)) }));
+    const days = new Set(list.map((r) => dayKey(new Date(r.at))));
+    const good = list.reduce((n, r) => n + r.good, 0), all = list.reduce((n, r) => n + r.attempts, 0);
+    $('meCount').innerHTML = `${list.length}<small>组</small>`;
+    $('meWeek').innerHTML = `${week.filter((x) => days.has(x.key)).length}<small>天</small>`;
+    $('meRate').textContent = all ? Math.round((good / all) * 100) + '%' : '–';
+    $('meWeekRow').innerHTML = week.map((x) =>
+      `<span class="wd${days.has(x.key) ? ' did' : Plan.data.days.includes(x.d) ? ' plan' : ''}${x.key === dayKey() ? ' today' : ''}"><i></i>${x.w}</span>`).join('');
+    $('meLogCount').textContent = list.length ? `最近 ${Math.min(list.length, 30)} 组` : '';
+    $('meLog').innerHTML = list.slice(0, 30).map((r) => {
+      const ex = exById(r.ex), t = new Date(r.at);
+      const when = `${t.getMonth() + 1}月${t.getDate()}日 ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+      const note = r.top && ex?.names[r.top] ? `最常出现：${ex.names[r.top]}` : r.good >= r.attempts ? '全部标准' : '';
+      return `<div class="logitem"><b>${ex?.name ?? r.ex}<small>${when}</small></b><span class="sc${r.good >= r.attempts ? ' full' : ''}">${r.good} / ${r.attempts}<small>次标准</small></span>
+        <span class="dots">${(r.reps || []).map((ok) => `<i${ok ? '' : ' class="bad"'}></i>`).join('')}</span>${note ? `<p>${note}${r.plan ? ' · 计划内' : ''}</p>` : ''}</div>`;
+    }).join('') || '<p class="empty">还没有记录。<br>用摄像头练完一组，报告会出现在这里。</p>';
+    $('btnClearLog').hidden = !list.length;
+    $('btnClearLog').textContent = '清空记录';
+  },
+};
+
 const App = {
+  planIdx: -1,    // 正在练今日计划里的第几项；-1 = 自由练习
+
+  /** 底部三个按钮：计划 / 跟练 / 我的 */
+  tab(name) {
+    if (this.phase !== 'home' || $(name).hidden === false) return;
+    if (name === 'plan') PlanUI.render();
+    if (name === 'me') MeUI.render();
+    if (name === 'home') this.renderToday();
+    this.show(name);
+  },
+  /** 首页的“今日计划”那一条 */
+  renderToday() {
+    const items = Plan.today(), el = $('todayPlan');
+    el.hidden = !items.length;
+    if (!items.length) return;
+    const done = Plan.doneSet(), n = items.filter((_, i) => done.has(i)).length, all = n >= items.length;
+    el.classList.toggle('done', all);
+    $('todayHead').textContent = `今日计划 · ${n} / ${items.length}`;
+    $('todayText').textContent = items.map((it) => `${exById(it.id).name} ${it.reps}`).join(' · ');
+    $('todayGo').textContent = all ? '已完成' : n ? '继续' : '开始';
+  },
+  /** 按计划练下一项：换到那个动作、那个次数，进讲解页 */
+  startPlan() {
+    const i = Plan.next();
+    if (i < 0) return;
+    const it = Plan.today()[i];
+    this.phase = 'home';
+    this.pick(EXERCISES.indexOf(exById(it.id)), 1);
+    this.planIdx = i; TARGET_REPS = it.reps;
+    this.intro();
+  },
   mode: 'camera',
   facing: 'user',
   source: null,
@@ -1224,7 +1341,10 @@ const App = {
 
   /** 切换页面。from = 触发切换的按钮：进入跟练时，深色画面从这个按钮的位置展开 */
   show(id, from) {
-    const all = ['home', 'intro', 'stageScreen', 'summary'].map($);
+    const all = ['home', 'intro', 'stageScreen', 'summary', 'plan', 'me'].map($);
+    // 底部三个按钮只在首页、计划、我的这三页出现；当前这一页的按钮变大变亮
+    $('tabs').hidden = !['home', 'plan', 'me'].includes(id);
+    document.querySelectorAll('#tabs .tab').forEach((el) => el.classList.toggle('on', el.dataset.tab === id));
     const next = $(id);
     const cur = all.find((el) => !el.hidden && el !== next);
     clearTimeout(this.showTimer);
@@ -1413,6 +1533,15 @@ const App = {
       ua: navigator.userAgent,
     };
     $('btnCopy').textContent = '复制本次数据';
+    if (s && s.attempts && this.mode === 'camera') {
+      Log.add({
+        at: Date.now(), ex: EX.id, good: s.good, attempts: s.attempts, target: TARGET_REPS, seconds: Math.round(s.seconds),
+        avgPeak: Math.round(s.avgPeak || 0), top: s.topIssue?.[0] ?? null, reps: s.reps.map((r) => (r.ok ? 1 : 0)),
+        ...(this.planIdx >= 0 && s.attempts >= TARGET_REPS ? { plan: `${dayKey()}#${this.planIdx}` } : {}),
+      });
+    }
+    const nx = this.planIdx >= 0 ? Plan.today()[Plan.next()] : null;
+    $('btnAgain').textContent = nx ? `继续计划：${exById(nx.id).name} · ${nx.reps} 次` : '再练一组';
     this.phase = 'done';
     setTimeout(async () => {
       const video = await Rec.stop();
@@ -1517,6 +1646,8 @@ const App = {
     this.source?.stop(); this.source = null;
     this.wake?.release?.(); this.wake = null;
     this.phase = 'home';
+    this.planIdx = -1; TARGET_REPS = 10;
+    this.renderToday();
     document.querySelector('#loading .spinner').hidden = false;
     this.show('home');
   },
@@ -1537,7 +1668,16 @@ $('btnTheme').onclick = () => {
   try { localStorage.setItem('homeTheme', darkHome ? 'dark' : 'light'); } catch { /* 忽略 */ }
 };
 
-$('btnStart').onclick = () => App.intro();
+$('btnStart').onclick = () => { App.planIdx = -1; TARGET_REPS = 10; App.intro(); };
+$('todayPlan').onclick = () => App.startPlan();
+document.querySelectorAll('#tabs .tab').forEach((el) => { el.onclick = () => App.tab(el.dataset.tab); });
+$('plan').addEventListener('click', (e) => PlanUI.click(e));
+// 清空记录：点两次才真的清，免得误触
+$('btnClearLog').onclick = () => {
+  if ($('btnClearLog').textContent === '清空记录') { $('btnClearLog').textContent = '再点一次，确认清空'; return; }
+  Log.clear(); MeUI.render();
+};
+App.renderToday();
 $('btnPrev').onclick = () => App.pick(App.exIndex - 1, -1);
 $('btnNext').onclick = () => App.pick(App.exIndex + 1, 1);
 // 在示范区左右滑也能换动作
@@ -1585,7 +1725,7 @@ $('btnCopy').onclick = async () => {
 $('btnDemo').onclick = () => App.start('demo', $('btnDemo'));
 $('btnBack').onclick = () => App.home();
 $('btnHome').onclick = () => App.home();
-$('btnAgain').onclick = () => App.start(App.mode);
+$('btnAgain').onclick = () => (App.planIdx >= 0 && Plan.next() >= 0 ? App.startPlan() : App.start(App.mode));
 $('btnEnd').onclick = () => App.finish();
 $('btnForce').onclick = () => App.beginWorkout(null);
 $('btnFlip').onclick = () => { App.facing = App.facing === 'user' ? 'environment' : 'user'; App.start('camera'); };
