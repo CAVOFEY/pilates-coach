@@ -61,6 +61,12 @@ export class Viewer {
       this.scene.add(g);
       return g;
     });
+    // 第三个箭头：在胸口上方朝下，提示“身体和腰往下贴住垫子”
+    this.arrowDn = new T.Group();
+    this.arrowDn.add(new T.Mesh(shaft, this.arrowMat), new T.Mesh(tip, this.arrowMat));
+    this.arrowDn.visible = false; this.arrowDn.renderOrder = 5;
+    this.arrowDn.rotation.z = Math.PI;                 // 掉个头，尖朝下
+    this.scene.add(this.arrowDn);
     this.target = new T.Vector3(0.4, 0.22, 0);
     this.yaw = 0.55; this.pitch = 0.24; this.dist = 2.55;
     this.auto = true;          // 没人碰之前自己慢慢转
@@ -172,13 +178,17 @@ export class Viewer {
     const mid = (p, q) => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2, (p[2] + q[2]) / 2];
     const all = { ...J, midSh: mid(J.lSh, J.rSh), midHip: mid(J.lHip, J.rHip) };
     // 躯干从肩到髋，中间经过脊柱中段（在 53% 处）。肚子占其中 36%～72% 这一段：肋骨下缘到骨盆上缘
+    const W = this._w ??= { side: new T.Vector3(), front: new T.Vector3(), x: new T.Vector3(), z: new T.Vector3(), off: new T.Vector3(), m: new T.Matrix4(), body: new T.Vector3() };
+    W.side.fromArray(J.lSh).sub(v(0).fromArray(J.rSh)).normalize();
+    // 身体正面朝哪（仰卧时朝上）
+    W.body.fromArray(all.midHip).sub(v(0).fromArray(all.midSh)).cross(W.side).normalize();
+    // 核心收紧时，躯干中段往后背方向沉：肩和髋不动，中间沉得最多（最多约 5.5 厘米）
     const along = (u) => {
       const [p, q, k] = u < 0.53 ? [all.midSh, J.spine, u / 0.53] : [J.spine, all.midHip, (u - 0.53) / 0.47];
-      return [0, 1, 2].map((i) => p[i] + (q[i] - p[i]) * k);
+      const sink = 0.055 * tuck * Math.sin(Math.PI * u);
+      return [0, 1, 2].map((i) => p[i] + (q[i] - p[i]) * k - W.body.getComponent(i) * sink);
     };
     all.rib = along(0.36); all.belt = along(0.72);
-    const W = this._w ??= { side: new T.Vector3(), front: new T.Vector3(), x: new T.Vector3(), z: new T.Vector3(), off: new T.Vector3(), m: new T.Matrix4() };
-    W.side.fromArray(J.lSh).sub(v(0).fromArray(J.rSh)).normalize();
     const ball = (p, pos, r) => {
       p.fill.position.copy(pos); p.fill.scale.setScalar(r);
       if (p.line) { p.line.position.copy(pos); p.line.scale.setScalar(r + EDGE); }
@@ -190,7 +200,7 @@ export class Viewer {
       const len = D.length() || 1e-4;
       D.divideScalar(len);
       // 肚子这一段：固定朝向（肚皮朝外），核心收紧时只微微下沉一点
-      const flat = p.core ? 1 - 0.06 * tuck : 1;
+      const flat = p.core ? 1 - 0.12 * tuck : 1;
       if (p.core) {
         W.front.crossVectors(D, W.side).normalize();          // 肚皮朝外的方向
         W.z.copy(W.front).negate();                           // 圆柱贴图的正中（0.5 处）在它自己的 -z 方向，所以把 -z 对准肚皮
@@ -283,11 +293,12 @@ export class Viewer {
   /**
    * 提示箭头：告诉大家这个动作从哪儿、往哪个方向发力。
    * t = 动作开始后过了几秒，不在开头就传 null（箭头隐藏）；
-   * at = 贴着哪个关节（Hip 髋 / Kn 膝 / An 脚踝）；dir = up 往上，out 贴着垫子往脚的方向
+   * at = 贴着哪个关节（Hip 髋 / Kn 膝 / An 脚踝）；dir = up 往上，out 贴着垫子往脚的方向；press = 胸口上方再加一个朝下的箭头（腰往下贴）
    */
-  arrowAt(J, t, { at = 'Hip', dir = 'up' } = {}) {
+  arrowAt(J, t, { at = 'Hip', dir = 'up', press = false } = {}) {
     const on = !!J && t != null && t >= 0 && t < 1.5;
     for (const g of this.arrows) g.visible = on;
+    this.arrowDn.visible = on && press;
     if (!on) return;
     const T = THREE;
     const p = (t % 0.75) / 0.75;                       // 连着“biu”两下，每下 0.75 秒
@@ -309,6 +320,15 @@ export class Viewer {
       g.quaternion.setFromUnitVectors(UP, way);
       g.scale.setScalar(k);
     });
+    if (press) {
+      // 胸口到肚子之间的正上方，从高处往下“biu”，停在身体上面一点
+      const u = 0.38, top = 0.13 + 0.07 + 0.21;        // 身体半径 + 留的空 + 箭头自己的长度
+      const px = ((J.lSh[0] + J.rSh[0]) * (1 - u) + (J.lHip[0] + J.rHip[0]) * u) / 2;
+      const py = ((J.lSh[1] + J.rSh[1]) * (1 - u) + (J.lHip[1] + J.rHip[1]) * u) / 2;
+      const pz = ((J.lSh[2] + J.rSh[2]) * (1 - u) + (J.lHip[2] + J.rHip[2]) * u) / 2;
+      this.arrowDn.position.set(px, py + top + 0.26 * (1 - rise), pz);
+      this.arrowDn.scale.setScalar(k * 1.15);
+    }
   }
 
   start() {

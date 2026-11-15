@@ -415,7 +415,7 @@ const EXERCISES = [
     perfect: '伸腿和收回的时候，试着让骨盆一点都不晃。',
     pose: heelslidePose, sag: false, fit: 0.8, hot: { waist: 1 }, glow2d: 'core', tuck: 1,
     // ↑ 练的是腿在动的时候核心稳住骨盆；腿本身只是在滑
-    arrow: { at: 'An', dir: 'out' }, cam: { x: 0.62, dist: 3.0, mat: [1.24, 0.63] },   // 腿伸直后比较长：垫子加长，镜头退远
+    arrow: { at: 'An', dir: 'out', press: true }, cam: { x: 0.62, dist: 3.0, mat: [1.24, 0.63] },   // 腿伸直后比较长：垫子加长，镜头退远
     idealTop: idealHeelslide,
   },
 ];
@@ -883,7 +883,7 @@ function startFigure(cvId, hostId) {
       const L = EX.pose(p), g = (k) => L[P[k]];
       const S = g('lSh'), H = g('lHip'), K = g('lKn');
       // 桥式的脊柱不是一块板：抬到一半时下背还贴近垫子，到顶才拉直
-      const sag = EX.sag ? 15 * Math.sin(Math.PI * p) ** 0.9 : 3 * p;   // 另外两个动作：核心收紧，腰往垫子沉一点点
+      const sag = EX.sag ? 15 * Math.sin(Math.PI * p) ** 0.9 : 6 * p;   // 另外两个动作：核心收紧，腰往垫子沉一点
       const C = { x: S.x + (H.x - S.x) * 0.56, y: S.y + (H.y - S.y) * 0.56 + sag };
       const spineAt = (u) => ({
         x: (1 - u) * (1 - u) * S.x + 2 * (1 - u) * u * C.x + u * u * H.x,
@@ -1004,7 +1004,7 @@ function idealHeelslide(R) {
 /** 标准动作在每段口令里做到几成 */
 const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg === 'hold' ? 1 : seg === 'down' ? 1 - ease(clamp(sec / 3.4, 0, 1)) : 0);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=26'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=27'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
