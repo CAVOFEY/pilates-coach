@@ -8,7 +8,7 @@
 /* 中文字体：OPPO Sans 4.0（可变字重 100–700），已裁剪到只含页面用到的字。改了文字后运行 tools/subset_font.py */
 @font-face {
   font-family: "OPPO Sans";
-  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=29") format("woff2");
+  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=30") format("woff2");
   font-weight: 100 700;
   font-display: swap;
 }
@@ -173,15 +173,21 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 .stat b small { font-family: var(--font); font-size: 13px; font-weight: 500; margin-left: 3px; color: var(--ink-soft); }
 /* 每一次做到哪儿：柱子越高做得越到位，虚线是到位线 */
 .chart { background: #fff; border: 1.5px solid var(--line); border-radius: var(--r-md); padding: 20px 14px 12px; }
-.plot { position: relative; height: 128px; }
-.bars { height: 100%; margin-right: 48px; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; }
+.plot { position: relative; height: 156px; }
+.bars { position: relative; height: 100%; margin-right: 58px; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; }
 .bar { height: 100%; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 6px; }
-.bar i { width: 100%; max-width: 20px; height: calc(var(--h) * (100% - 24px)); border-radius: 7px 7px 3px 3px; background: var(--teal-300); transform-origin: 50% 100%; transition: box-shadow .2s; }
+.bar u { margin-bottom: -3px; text-decoration: none; font-family: var(--font-num); font-size: 10px; font-weight: 700; line-height: 13px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.bar.bad u { color: var(--pink-600); }
+.bar i { width: 100%; max-width: 20px; height: calc(var(--h) * (100% - 40px)); border-radius: 7px 7px 3px 3px; background: var(--teal-300); transform-origin: 50% 100%; transition: box-shadow .2s; }
 .bar.bad i { background: var(--pink-500); }
 .bar span { height: 18px; min-width: 18px; padding: 0 4px; border-radius: 9px; display: grid; place-items: center; font-family: var(--font-num); font-size: 12px; font-weight: 700; color: var(--ink-soft); font-variant-numeric: tabular-nums; transition: background-color .2s, color .2s; }
 .bar.sel span { background: var(--ink); color: #fff; }
-.goal { position: absolute; left: 0; right: 0; bottom: calc(24px + .8 * (100% - 24px)); border-top: 1.5px dashed rgba(115, 102, 118, .5); pointer-events: none; }
-.goal em { position: absolute; right: 0; top: -9px; padding-left: 7px; background: #fff; font-style: normal; font-size: 11px; line-height: 16px; letter-spacing: .06em; color: var(--ink-soft); }
+.goal { position: absolute; left: 0; right: 0; bottom: calc(24px + var(--lo, .8) * (100% - 40px)); height: calc((var(--hi, 1) - var(--lo, .8)) * (100% - 40px)); background: rgba(126, 214, 196, .2); border-top: 1.5px dashed rgba(60, 160, 140, .55); border-bottom: 1.5px dashed rgba(60, 160, 140, .55); border-radius: 4px; pointer-events: none; }
+.goal em { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); font-style: normal; font-size: 11px; line-height: 14px; text-align: right; color: var(--teal-700); font-weight: 700; }
+.goal em b { display: block; font-family: var(--font-num); font-weight: 700; font-size: 10.5px; }
+.chart-key { margin: 10px 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-soft); }
+.chart-key b.ok { color: var(--teal-700); } .chart-key b.bad { color: var(--pink-600); }
+.stat span small { display: block; margin-top: 3px; font-size: 11px; font-weight: 700; color: var(--teal-700); }
 .rep-note { margin: 10px 0 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 14px; line-height: 1.55; color: var(--ink); min-height: 2.6em; }
 .rep-note b { font-weight: 700; }
 .rep-note b.bad { color: var(--pink-600); }
@@ -547,9 +553,10 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
       <h2>每一次做到哪儿</h2>
       <div class="chart" id="sumChart">
         <div class="plot">
-          <span class="goal"><em>到位线</em></span>
+          <span class="goal"><em>标准<b id="sumGoal"></b></em></span>
           <div class="bars" id="sumBars"></div>
         </div>
+        <p class="chart-key">柱子越高，动作幅度越大，柱顶是量到的角度。<b class="ok">绿色</b>是标准，<b class="bad">粉色</b>是有问题，点柱子看原因。</p>
         <p class="rep-note" id="sumRepNote"></p>
       </div>
     </div>
@@ -603,6 +610,6 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
 })();
 </script>
 <link rel="modulepreload" href="./vendor/three.module.min.js">
-<script type="module" src="./app.js?v=29"></script>
+<script type="module" src="./app.js?v=30"></script>
 </body>
 </html>

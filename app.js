@@ -263,7 +263,7 @@ class SetupGuide {
     });
     if (App.mode === 'camera' && App.size.h > App.size.w * 1.1 && !b?.all) {
       this.readySince = null;
-      return this.hint('rotate', '把手机横过来立稳，侧面对着你，更容易拍到全身。', t);
+      return this.hint('rotate', '把手机横过来立稳，侧面对着你。已经横着放了的话，请先关掉手机的竖屏锁定。', t);
     }
     if (!b || (!b.seen.shoulder && !b.seen.hip)) {
       this.readySince = null;
@@ -291,6 +291,10 @@ class SetupGuide {
     const kneesBent = b.kneeAngle != null && b.kneeAngle > 40 && b.kneeAngle < 140;
     if (!lying) {
       this.readySince = null;
+      // 画面是竖的，人在画面里也是“竖”的：多半是手机横着放了，但开着竖屏锁定，画面被转了 90 度
+      if (App.mode === 'camera' && App.size.h > App.size.w * 1.1 && b.torsoTilt > 55) {
+        return this.hint('locked', '画面方向不对。请先关掉手机的竖屏锁定，再把手机横过来。', t);
+      }
       return this.hint('lie', '看到你了。侧对手机躺下，屈膝，双脚踩地。', t);
     }
     if (!kneesBent || b.hipAngle > 152) {
@@ -721,7 +725,7 @@ function loadModel() {
       PoseLandmarker.createFromOptions(fileset, {
         baseOptions: { ...(model ? { modelAssetBuffer: model } : { modelAssetPath: base + MODEL_NAME }), delegate },
         runningMode: 'VIDEO',
-        numPoses: 1,
+        numPoses: 2,   // 最多找两个“人”，再从里面认准一开始的那个（见 Who）
       });
     setLoadStatus('第 3 步 / 共 3 步：启动识别（显卡加速）…');
     try {
@@ -765,6 +769,42 @@ async function openCamera(facing) {
   return stream;
 }
 
+// ---------- 认准一个人：开始跟练时记住这个人在画面里的位置和大小，之后只认它 ----------
+// 晾着的衣服、路过的人离得远，不会被换过去；认准的人暂时看不到时，宁可这一帧当作没看到
+const Who = {
+  c: null, size: 0, locked: false, last: null, lostSince: null,
+  reset() { this.c = null; this.locked = false; this.last = null; this.lostSince = null; },
+  lock() { this.locked = true; if (this.last) { this.c = this.last.c; this.size = this.last.size; } },
+  box(p, w, h) {
+    const m = (a, b) => [(p[a].x + p[b].x) / 2 * w, (p[a].y + p[b].y) / 2 * h];
+    const S = m(P.lSh, P.rSh), H = m(P.lHip, P.rHip), K = m(P.lKn, P.rKn);
+    return { c: [(S[0] + H[0]) / 2, (S[1] + H[1]) / 2], size: Math.hypot(S[0] - H[0], S[1] - H[1]) + Math.hypot(H[0] - K[0], H[1] - K[1]) };
+  },
+  /** 返回这一帧该用第几个人；-1 = 都不是 */
+  choose(list, w, h, t) {
+    if (!list?.length) { this.last = null; return -1; }
+    const boxes = list.map((p) => this.box(p, w, h));
+    if (!this.c) {                                   // 还没认准：先用画面里最大的那个
+      let i = 0;
+      boxes.forEach((b, k) => { if (b.size > boxes[i].size) i = k; });
+      this.last = boxes[i];
+      if (this.locked) { this.c = boxes[i].c; this.size = boxes[i].size; }
+      return i;
+    }
+    let i = -1, best = Infinity;
+    boxes.forEach((b, k) => { const d = Math.hypot(b.c[0] - this.c[0], b.c[1] - this.c[1]); if (d < best) { best = d; i = k; } });
+    // 人躺在垫子上不会走远：离原来的位置超过大半个身位、或者大小差一倍，就不是同一个人
+    const lost = this.lostSince == null ? 0 : (t - this.lostSince) / 1000;
+    const reach = this.size * (0.55 + 0.45 * Math.min(1, lost / 4));
+    const ratio = boxes[i].size / this.size;
+    if (best > reach || ratio < 0.5 || ratio > 2) { this.lostSince ??= t; return -1; }
+    this.lostSince = null;
+    this.c = [this.c[0] + (boxes[i].c[0] - this.c[0]) * 0.2, this.c[1] + (boxes[i].c[1] - this.c[1]) * 0.2];
+    this.size += (boxes[i].size - this.size) * 0.1;
+    return i;
+  },
+};
+
 class CameraSource {
   constructor(facing = 'user') { this.facing = facing; this.raf = 0; this.stream = null; }
   async start(onFrame, onDraw, onResize) {
@@ -776,6 +816,7 @@ class CameraSource {
       openCamera(this.facing).catch((e) => { debugNote('打开摄像头', e); throw e; }),
     ]);
     this.stream = stream;
+    Who.reset();
     setLoadStatus('正在打开摄像头画面…');
     const video = $('video');
     video.srcObject = stream;
@@ -787,7 +828,7 @@ class CameraSource {
       const t = performance.now();
       // 手机转了方向，画面的宽高会对调：跟着更新
       if (video.videoWidth && (video.videoWidth !== w || video.videoHeight !== h)) {
-        w = video.videoWidth; h = video.videoHeight; lms = null; shown = null;
+        w = video.videoWidth; h = video.videoHeight; lms = null; shown = null; Who.c = null;
         onResize?.(w, h);
       }
       // 每秒最多识别约 15 次，普拉提动作慢，够用也省电
@@ -797,9 +838,9 @@ class CameraSource {
           const res = landmarker.detectForVideo(video, t);
           const cost = performance.now() - t;
           runInfo.detectMs = runInfo.detectMs ? runInfo.detectMs * 0.9 + cost * 0.1 : cost;
-          const raw = res.landmarks?.[0];
+          const who = Who.choose(res.landmarks, w, h, t), raw = who >= 0 ? res.landmarks[who] : null;
           lms = raw ? raw.map((p) => ({ x: p.x * w, y: p.y * h, v: p.visibility ?? 0 })) : null;
-          world = raw ? res.worldLandmarks?.[0] ?? null : null;
+          world = raw ? res.worldLandmarks?.[who] ?? null : null;
         } catch (e) { console.warn('detect failed', e); }
         onFrame(lms, t, world);
       }
@@ -1003,8 +1044,10 @@ function idealHeelslide(R) {
 }
 /** 标准动作在每段口令里做到几成 */
 const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg === 'hold' ? 1 : seg === 'down' ? 1 - ease(clamp(sec / 3.4, 0, 1)) : 0);
+/** 这个动作“标准”的角度范围 [小, 大] */
+const stdRange = (ex) => (ex.id === 'kneefold' ? [72, ex.top] : [ex.top, 180]);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=29'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=30'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -1046,6 +1089,18 @@ const Cmp = {
     this.data = null;
     if (!track || track.length < 20) return;
     // 躺平时的姿势：取“落地休息”那几段的平均
+    track = track.filter((f) => summaryReps[f.rep - 1]);     // 没做完的那一次不放进来
+    if (track.length < 20) return;
+    const restF0 = track.filter((f) => f.seg === 'rest');
+    const src0 = restF0.length >= 5 ? restF0 : track.slice(0, 5);
+    // 摄像头不知道哪边是“上”：手机歪着、或者画面被转了 90 度时，人会变成站着的。
+    // 躺着屈膝时，肩和髋一样高、膝盖比髋和脚都高。四个方向里挑最符合的那个，把整段动作转正
+    const ROT = [(v) => v, (v) => [-v[1], v[0], v[2]], (v) => [-v[0], -v[1], v[2]], (v) => [v[1], -v[0], v[2]]];
+    const avgY = (rot, names) => names.reduce((n, k) => n + src0.reduce((m, f) => m + rot(f.J[k])[1], 0) / src0.length, 0) / names.length;
+    const upright = (rot) => avgY(rot, ['lKn', 'rKn']) - (avgY(rot, ['lHip', 'rHip']) + avgY(rot, ['lAn', 'rAn'])) / 2
+      - Math.abs(avgY(rot, ['lSh', 'rSh']) - avgY(rot, ['lHip', 'rHip']));
+    const rot = ROT.reduce((a, b) => (upright(b) > upright(a) + 0.02 ? b : a));
+    if (rot !== ROT[0]) track = track.map((f) => ({ ...f, J: mapJ(f.J, rot) }));
     const restF = track.filter((f) => f.seg === 'rest');
     const src = restF.length >= 5 ? restF : track.slice(0, 5);
     const R0 = mapJ(src[0].J, (_, k) => [0, 1, 2].map((i) => src.reduce((sum, f) => sum + f.J[k][i], 0) / src.length));
@@ -1119,26 +1174,41 @@ const introLines = () => [
   [-1, '看明白了，就点开始。'],
 ];
 const IntroTalk = {
-  run: 0,
+  run: 0, timer: 0, keep: [],
   mark(n) { [...$('introSteps').children].forEach((li, i) => li.classList.toggle('on', i === n)); },
   play() {
     const id = ++this.run;
+    clearTimeout(this.timer);
     this.mark(-1);
     if (!Voice.ok) return;
     speechSynthesis.cancel();
     const lines = introLines();
-    lines.forEach(([n, text], k) => {
+    // 估计一句话要念多久（毫秒）：按字数算，逗号、句号各停一下
+    const est = (text) => 250 + ((text.replace(/[，。]/g, '').length * 215 + (text.match(/，/g) || []).length * 200 + (text.match(/。/g) || []).length * 380) / 1.05);
+    let cur = -1;
+    // 第 k 句开始念了。real = 语音自己报的（准）；否则是按估计时间走到的
+    const begin = (k, real) => {
+      if (id !== this.run || k < cur || (k === cur && !real)) return;
+      cur = k;
+      clearTimeout(this.timer);
+      this.mark(k < lines.length ? lines[k][0] : -1);
+      if (k < lines.length) this.timer = setTimeout(() => begin(k + 1, false), est(lines[k][1]));
+    };
+    // 句子对象要一直留着：有的手机会把排队中的句子回收掉，后面的“开始念了”就收不到
+    this.keep = lines.map(([, text], k) => {
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'zh-CN';
       if (Voice.voice) u.voice = Voice.voice;
       u.rate = 1.05;
-      // 被打断的旧句子也会触发这些回调，用编号认出来、不理它
-      u.onstart = () => { if (id === this.run) this.mark(n); };
-      if (k === lines.length - 1) u.onend = () => { if (id === this.run) this.mark(-1); };
+      // 被打断的旧句子也会触发这些回调，begin 里用编号认出来、不理它
+      u.onstart = () => begin(k, true);
+      if (k === lines.length - 1) u.onend = () => begin(lines.length, true);
       speechSynthesis.speak(u);
+      return u;
     });
+    this.timer = setTimeout(() => begin(0, false), 700);
   },
-  stop() { this.run++; this.mark(-1); Voice.stop(); },
+  stop() { this.run++; clearTimeout(this.timer); this.keep = []; this.mark(-1); Voice.stop(); },
 };
 const App = {
   mode: 'camera',
@@ -1322,6 +1392,7 @@ const App = {
     toast('准备好了', 'good', 2200);
     Voice.say('准备好了。不用看屏幕，跟着我的口令做。', 2);
     this.coach = new Coach(EX, rest, () => this.finish());
+    Who.lock();
     this.track = []; this.trackJ = null;
     if (this.source instanceof DemoSource) this.source.coach = this.coach;
     setTimeout(() => {
@@ -1360,7 +1431,7 @@ const App = {
     this.recUrl = null; this.recBlob = blob && blob.size ? blob : null;
     $('recBox').hidden = !this.recBlob;
     $('btnSaveRec').textContent = '保存录像到手机';
-    if (this.recBlob) { this.recUrl = URL.createObjectURL(this.recBlob); $('recVideo').src = this.recUrl; }
+    if (this.recBlob) { this.recUrl = URL.createObjectURL(this.recBlob); $('recVideo').src = this.recUrl + '#t=0.05'; }   // 停在开头的画面上，而不是一块黑
     else $('recVideo').removeAttribute('src');
   },
 
@@ -1372,7 +1443,7 @@ const App = {
     const what = r.issue ? EX.names[r.issue] : '标准';
     const detail = r.issue === 'miss' ? '没有量到明显的动作。'
       : r.counted ? `量到 ${Math.round(r.peak)}°，到位后停了 ${(r.topMs / 1000).toFixed(1)} 秒。`
-        : `量到 ${Math.round(r.peak)}°，到位线是 ${EX.top}°。`;
+        : `量到 ${Math.round(r.peak)}°，标准是 ${stdRange(EX).join('°–')}°。`;
     $('sumRepNote').innerHTML = `<b class="${r.ok ? 'ok' : 'bad'}">第 ${i + 1} 次 · ${what}</b>　${detail}`;
   },
 
@@ -1394,19 +1465,28 @@ const App = {
     $('sumOf').textContent = `/ ${s.attempts} 次标准 · ${EX.name}`;
     $('sumTime').textContent = `${Math.floor(s.seconds / 60)}:${String(Math.round(s.seconds % 60)).padStart(2, '0')}`;
     $('sumAngle').textContent = s.avgPeak ? Math.round(s.avgPeak) + '°' : '–';
-    $('sumAngleName').textContent = EX.angleName;
+    const [lo, hi] = stdRange(EX);
+    $('sumAngleName').innerHTML = `${EX.angleName}<small>标准 ${lo}°–${hi}°</small>`;
     $('sumHold').innerHTML = s.avgHold ? `${s.avgHold.toFixed(1)}<small>秒</small>` : '–';
-    // 柱状图：每一次做到了到位线的几成
+    // 柱状图：柱子的高度 = 这一次量到的角度（从躺着的起始角度算起），绿色那一条是标准范围
     const bars = $('sumBars');
     bars.innerHTML = '';
     $('sumChart').hidden = !s.reps.length;
     this.sumReps = s.reps;
+    const c = this.coach, d = EX.dir, restA = c ? c.rest : d * (EX.rest[0] + EX.rest[1]) / 2;
+    const lvlOf = (deg) => (d * deg - restA) / (d * EX.top - restA);        // 0 = 没动，1 = 刚到标准范围
+    const far = lvlOf(d > 0 ? hi : lo), lvls = s.reps.map((r) => Math.max(0, lvlOf(r.peak)));
+    const M = Math.max(far, ...lvls, 1.2) * 1.12;
+    const plot = $('sumChart').querySelector('.plot');
+    plot.style.setProperty('--lo', (1 / M).toFixed(3));
+    plot.style.setProperty('--hi', (far / M).toFixed(3));
+    $('sumGoal').textContent = `${lo}–${hi}°`;
     s.reps.forEach((r, i) => {
       const el = document.createElement('button');
       el.className = 'bar' + (r.ok ? '' : ' bad');
-      el.style.setProperty('--h', Math.max(0.05, Math.min(r.lvl ?? 0, 1.25) / 1.25).toFixed(3));
+      el.style.setProperty('--h', Math.max(0.04, lvls[i] / M).toFixed(3));
       el.style.setProperty('--i', i);
-      el.innerHTML = `<i></i><span>${i + 1}</span>`;
+      el.innerHTML = `<u>${r.issue === 'miss' ? '–' : Math.round(r.peak) + '°'}</u><i></i><span>${i + 1}</span>`;
       el.setAttribute('aria-label', `第 ${i + 1} 次：${r.issue ? EX.names[r.issue] : '标准'}`);
       el.onclick = () => this.pickRep(i);
       bars.appendChild(el);
