@@ -363,7 +363,7 @@ const EXERCISES = [
   },
   {
     id: 'kneefold', name: '屈膝抬腿', muscles: ['下腹', '核心', '髋前侧'],
-    steps: [['躺好', '屈膝，双脚踩地，手放两边', ''], ['抬腿', '收紧肚子，抬到大腿竖直', 'out'], ['停住', '小腿放平，腰贴住垫子', 'in'], ['放下', '脚尖慢慢点回垫子', 'out']],
+    steps: [['躺好', '屈膝，双脚踩地，手放两边', ''], ['抬腿', '收紧肚子，抬到大腿竖直', 'out'], ['停住', '小腿放平，脚放松，腰贴垫子', 'in'], ['放下', '脚尖慢慢点回垫子', 'out']],
     seg: { up: '呼气，抬腿', hold: '停住，吸气', down: '呼气，放下', rest: '吸气，准备' },
     say: { up: '呼气，抬腿。', hold: '停住，吸气。', almost: '停住，膝盖再抬高一点。', down: '呼气，慢慢放下。' },
     meter: '抬腿高度', angleName: '平均大腿角度', ideal: 90,
@@ -1004,7 +1004,7 @@ function idealHeelslide(R) {
 /** 标准动作在每段口令里做到几成 */
 const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg === 'hold' ? 1 : seg === 'down' ? 1 - ease(clamp(sec / 3.4, 0, 1)) : 0);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=27'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=28'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
