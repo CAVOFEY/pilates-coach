@@ -8,7 +8,7 @@
 /* 中文字体：OPPO Sans 4.0（可变字重 100–700），已裁剪到只含页面用到的字。改了文字后运行 tools/subset_font.py */
 @font-face {
   font-family: "OPPO Sans";
-  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=32") format("woff2");
+  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=33") format("woff2");
   font-weight: 100 700;
   font-display: swap;
 }
@@ -320,7 +320,7 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 .wd.did i { background: var(--teal-300); border-color: transparent; }
 .wd.did i::after { content: ""; width: 9px; height: 5px; margin-top: -2px; border-left: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(-45deg); }
 .wd.today { color: var(--ink); font-weight: 700; }
-.logitem { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 6px 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+.logitem { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 6px 10px; padding: 12px 0; border-top: 1px solid var(--line); }
 .logitem:first-child { padding-top: 0; border-top: 0; }
 .logitem b { font-size: 15px; font-weight: 600; }
 .logitem b small { margin-left: 8px; font-size: 12px; font-weight: 500; color: var(--ink-soft); }
@@ -736,6 +736,6 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
 })();
 </script>
 <link rel="modulepreload" href="./vendor/three.module.min.js">
-<script type="module" src="./app.js?v=32"></script>
+<script type="module" src="./app.js?v=33"></script>
 </body>
 </html>
