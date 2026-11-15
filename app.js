@@ -696,7 +696,7 @@ function debugNote(where, e) {
 let landmarkerPromise = null;
 function loadModel() {
   return (landmarkerPromise ??= (async () => {
-    setLoadStatus('第 1 步 / 共 3 步：下载识别程序…');
+    setLoadStatus('第 1 步 / 共 3 步：准备识别程序…');
     const { PoseLandmarker, FilesetResolver } = await import('./vendor/tasks-vision/vision_bundle.mjs');
     const fileset = await FilesetResolver.forVisionTasks('./vendor/tasks-vision/wasm');
     // 先把最大的两个文件下到浏览器缓存里（约 10 MB + 6 MB），后面启动时就不用再等网络
@@ -1004,7 +1004,7 @@ function idealHeelslide(R) {
 /** 标准动作在每段口令里做到几成 */
 const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg === 'hold' ? 1 : seg === 'down' ? 1 - ease(clamp(sec / 3.4, 0, 1)) : 0);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=28'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=29'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -1521,3 +1521,13 @@ setTimeout(() => Intro3D.set('3d'), 250);
 if (!new URLSearchParams(location.search).has('demo')) setTimeout(() => loadModel().catch(() => {}), 2000); // 方便调试
 window.__test = { stdJoints, Cmp, Coach, SetupGuide, DemoSource, demoPose, readBody, EXERCISES, pick: (i) => App.pick(i, 1) };
 if (new URLSearchParams(location.search).has('demo')) App.start('demo');
+
+// 把页面文件存在本机（见 sw.js）：第二次打开不用再下载
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').then(() => navigator.serviceWorker.ready).then((reg) => {
+    const warm = () => reg.active?.postMessage({
+      warm: [location.origin + location.pathname, ...performance.getEntriesByType('resource').map((r) => r.name)],
+    });
+    warm(); setTimeout(warm, 10000);
+  }).catch(() => { /* 这个浏览器不支持，就和以前一样 */ });
+}
