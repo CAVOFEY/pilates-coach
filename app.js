@@ -1047,7 +1047,7 @@ const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg
 /** 这个动作“标准”的角度范围 [小, 大] */
 const stdRange = (ex) => (ex.id === 'kneefold' ? [72, ex.top] : [ex.top, 180]);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=31'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=32'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -1344,6 +1344,7 @@ const App = {
     const all = ['home', 'intro', 'stageScreen', 'summary', 'plan', 'me'].map($);
     // 底部三个按钮只在首页、计划、我的这三页出现；当前这一页的按钮变大变亮
     $('tabs').hidden = !['home', 'plan', 'me'].includes(id);
+    $('tabs').classList.toggle('over', id !== 'home');
     document.querySelectorAll('#tabs .tab').forEach((el) => el.classList.toggle('on', el.dataset.tab === id));
     const next = $(id);
     const cur = all.find((el) => !el.hidden && el !== next);

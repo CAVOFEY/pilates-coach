@@ -8,7 +8,7 @@
 /* 中文字体：OPPO Sans 4.0（可变字重 100–700），已裁剪到只含页面用到的字。改了文字后运行 tools/subset_font.py */
 @font-face {
   font-family: "OPPO Sans";
-  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=31") format("woff2");
+  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=32") format("woff2");
   font-weight: 100 700;
   font-display: swap;
 }
@@ -265,7 +265,9 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 /* ================= 底部三个圆按钮：计划 / 跟练 / 我的 ================= */
 #home { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 .home-mid { gap: 18px; padding-bottom: 0; }
-#tabs { position: absolute; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 16px; height: 66px; }
+#tabs { position: absolute; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 6; display: grid; grid-template-columns: repeat(3, 66px); place-items: center; gap: 4px; height: 66px; }
+/* 计划页、个人页的内容会滚到按钮下面：按钮后面垫一层由下往上变淡的底色 */
+#tabs.over::before { content: ""; position: absolute; z-index: -1; left: -200px; right: -200px; top: -34px; bottom: -40px; pointer-events: none; background: linear-gradient(to top, var(--pink-50) 62%, rgba(255, 245, 249, 0)); }
 #tabs .tab { width: 46px; height: 46px; flex: none; border-radius: 50%; display: grid; place-items: center; color: var(--ink-soft); background: #fff; box-shadow: 0 6px 18px rgba(120, 70, 100, .16), 0 0 0 1px rgba(240, 220, 230, .9);
   transition: width .46s var(--out), height .46s var(--out), background-color .3s, color .3s, box-shadow .3s, transform .2s var(--out); }
 #tabs .tab svg { width: 22px; height: 22px; transition: transform .46s var(--out); }
@@ -292,7 +294,7 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 .day { position: relative; aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; font-size: 14px; font-weight: 600; background: var(--pink-50); color: var(--ink-soft); }
 .day.on { background: var(--pink-500); color: #fff; box-shadow: 0 6px 14px rgba(232, 120, 159, .35); }
 .day.today::after { content: ""; position: absolute; left: 50%; bottom: -8px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--teal-500); }
-.pitem { display: flex; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.pitem { display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--line); }
 .pitem:first-child { padding-top: 0; border-top: 0; }
 .pitem .nm { flex: 1; min-width: 0; }
 .pitem .nm b { display: block; font-size: 16px; font-weight: 600; }
@@ -307,7 +309,8 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 .adds { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { min-height: 38px; padding: 0 14px; border-radius: 999px; font-size: 14px; font-weight: 500; background: var(--teal-50); color: var(--teal-700); border: 1.5px dashed var(--teal-300); }
 .chip.solid { border-style: solid; background: #fff; text-align: left; min-height: 0; padding: 10px 14px; border-radius: 16px; line-height: 1.5; flex: 1 1 100%; }
-.chip.solid b { display: block; font-weight: 600; color: var(--ink); }
+.chip.solid { color: var(--ink-soft); font-size: 13px; }
+.chip.solid b { display: block; font-size: 15px; font-weight: 600; color: var(--ink); }
 .total { margin: 0; padding-top: 12px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; color: var(--ink-soft); }
 .total b { font-family: var(--font-num); font-size: 15px; color: var(--ink); }
 .week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
@@ -733,6 +736,6 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
 })();
 </script>
 <link rel="modulepreload" href="./vendor/three.module.min.js">
-<script type="module" src="./app.js?v=31"></script>
+<script type="module" src="./app.js?v=32"></script>
 </body>
 </html>
