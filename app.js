@@ -2,6 +2,7 @@
 // 流程：首页 → 摆放（看到全身、躺好）→ 跟练（计数 + 语音纠正）→ 小结
 // 骨架识别用 Google MediaPipe Pose（开源模型，本地运行）；动作标准判定和教练逻辑是本项目自己写的。
 
+import { MOVES, moveJoints } from './moves.js?v=36';
 const $ = (id) => document.getElementById(id);
 let TARGET_REPS = 10;   // 自由练习一组 10 次；按计划练时换成计划里定的次数
 
@@ -982,12 +983,12 @@ const mapJ = (J, fn) => Object.fromEntries(Object.entries(J).map(([k, v]) => [k,
 const lerpJ = (A, B, k) => mapJ(A, (v, key) => V.lerp(v, B[key], k));
 const SIDE_PARTS = ['Sh', 'El', 'Wr', 'Hip', 'Kn', 'An', 'Toe'];
 /** 标准示范的 3D 关节：把平面示范（demoPose）立起来，左右两侧各偏开一点。p = 抬起程度 0~1 */
-function stdJoints(p) {
-  const L = EX.pose(p), k = 0.0054, g = (n) => L[P[n]];
+function stdJoints(p, ex = EX) {
+  const L = ex.pose(p), k = 0.0054, g = (n) => L[P[n]];
   const at = (q, z) => [(q.x - 96) * k, (480 - q.y) * k, z];
   const S = g('lSh'), H = g('lHip');
   // 脊柱中段：抬到一半时下背还贴近垫子，到顶才拉直
-  const sag = EX.sag ? 15 * Math.sin(Math.PI * clamp(p, 0, 1)) ** 0.9 : 3 * clamp(p, 0, 1);
+  const sag = ex.sag ? 15 * Math.sin(Math.PI * clamp(p, 0, 1)) ** 0.9 : 3 * clamp(p, 0, 1);
   const M = { x: S.x + (H.x - S.x) * 0.53, y: S.y + (H.y - S.y) * 0.53 + sag * 0.5 };
   const wide = { Sh: 0.19, El: 0.25, Wr: 0.26, Hip: 0.11, Kn: 0.11, An: 0.11, Toe: 0.12 };
   const J = { head: at({ x: 58, y: 448 }, 0), spine: at(M, 0) };
@@ -1047,7 +1048,7 @@ const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg
 /** 这个动作“标准”的角度范围 [小, 大] */
 const stdRange = (ex) => (ex.id === 'kneefold' ? [72, ex.top] : [ex.top, 180]);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=35'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=36'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -1224,50 +1225,274 @@ const Log = {
   add(r) { this.list.unshift(r); this.list.length = Math.min(this.list.length, 80); Store.set('pilates.log', this.list); },
   clear() { this.list = []; Store.set('pilates.log', this.list); },
 };
-const Plan = {
-  data: { days: [], items: [], ...Store.get('pilates.plan', {}) },    // days = 每周哪几天，items = [{ id 动作, reps 次数 }]
-  save() { Store.set('pilates.plan', this.data); },
-  /** 今天要练的；今天不是训练日就是空的 */
-  today() { return this.data.days.includes(new Date().getDay()) ? this.data.items.filter((it) => exById(it.id)) : []; },
-  /** 今天已经练完了计划里的第几项 */
-  doneSet() { const k = dayKey() + '#'; return new Set(Log.list.filter((r) => r.plan?.startsWith(k)).map((r) => Number(r.plan.slice(k.length)))); },
-  /** 今天下一项该练第几个；-1 = 没有了 */
-  next() { const done = this.doneSet(); return this.today().findIndex((_, i) => !done.has(i)); },
+// ---------- 动作库：三个有摄像头纠正的动作 + 十九个跟着做的动作 ----------
+const CAM_INFO = {
+  bridge: { tags: ['臀腿', '核心'], intro: '仰卧屈膝，把髋抬起来，让肩、髋、膝成一条直线。', good: ['练臀部和大腿后侧', '学会一节一节卷动脊柱', '摄像头会数次数、纠正动作'] },
+  kneefold: { tags: ['核心'], intro: '仰卧屈膝，双腿抬到大腿竖直、小腿放平，腰一直贴着垫子。', good: ['练下腹和核心的稳定', '学会抬腿时不拱腰', '摄像头会数次数、纠正动作'] },
+  heelslide: { tags: ['核心', '臀腿'], intro: '仰卧屈膝，脚跟贴着垫子慢慢滑出去，把腿伸直再收回。', good: ['腿动的时候练骨盆不动', '对腰很友好的核心入门动作', '摄像头会数次数、纠正动作'] },
 };
-const PRESETS = [
-  { name: '入门', note: '每周 3 天（一三五），三个动作各 5 次', days: [1, 3, 5], reps: 5 },
-  { name: '进阶', note: '每周 4 天（一二四六），三个动作各 8 次', days: [1, 2, 4, 6], reps: 8 },
+const LIB = [
+  ...EXERCISES.map((ex) => ({ id: ex.id, name: ex.name, cam: true, ex, ...CAM_INFO[ex.id], how: ex.steps.map(([w, t]) => `${w}：${t}`), easy: '' })),
+  ...MOVES,
 ];
+const libById = (id) => LIB.find((m) => m.id === id);
+const TAGS = ['核心', '侧腰', '臀腿', '肩臂', '背部', '拉伸'];
+/** 计划里的一项要多少秒。n = 有摄像头的动作是次数，其余是秒数 */
+const itemSec = (it) => (libById(it.id)?.cam ? it.n * REP_SEC : it.n);
+const itemText = (it) => (libById(it.id)?.cam ? `${it.n} 次` : `${it.n} 秒`);
+const DEFAULT_PLANS = [
+  { id: 'd15', fixed: true, name: '15 分钟全身普拉提', note: '同学整理 · 进阶 · 跟着做', items: MOVES.map((m) => ({ id: m.id, n: m.secs })) },
+  { id: 'dcam', fixed: true, name: '仰卧基础三式', note: '入门 · 摄像头纠正', items: EXERCISES.map((e) => ({ id: e.id, n: 5 })) },
+];
+const Plans = {
+  mine: Store.get('pilates.plans', []),          // 自己建的计划：[{ id, name, items: [{ id 动作, n 次数或秒数 }] }]
+  last: Store.get('pilates.lastPlan', null),     // 上一次练的是哪个计划
+  save() { Store.set('pilates.plans', this.mine); },
+  get(id) { return this.mine.find((p) => p.id === id) || DEFAULT_PLANS.find((p) => p.id === id); },
+  items(p) { return p.items.filter((it) => libById(it.id)); },
+  /** 这个计划主要练哪里：把每个动作的部位按时长加起来，取最多的四个 */
+  tags(p) {
+    const sum = {};
+    for (const it of this.items(p)) libById(it.id).tags.forEach((t, i) => { sum[t] = (sum[t] || 0) + itemSec(it) / (i + 1); });
+    return Object.keys(sum).sort((a, b) => sum[b] - sum[a]).slice(0, 4);
+  },
+  mins(p) { return Math.max(1, Math.round(this.items(p).reduce((n, it) => n + itemSec(it), 0) / 60)); },
+  meta(p) { const n = this.items(p).length; return n ? `${n} 个动作 · 约 ${this.mins(p)} 分钟` : '还没有动作'; },
+};
+const tagHtml = (tags, lead) => (lead ? `<span>${lead}</span>` : '') + tags.map((t) => `<b>${t}</b>`).join('');
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/** 动作详情、跟做页里的 3D 示范：每块画布一个小人 */
+const MoveView = {
+  views: {},
+  async show(cvId, move) {
+    const cv = $(cvId);
+    try {
+      const m = await get3D();
+      let o = this.views[cvId];
+      if (!o) {
+        const v = new m.Viewer(cv);
+        v.figure('std');
+        o = this.views[cvId] = { v, move: null };
+        const io = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+        v.onTick = (now) => {
+          const mv = o.move;
+          if (!mv) return;
+          if (mv.cam) {
+            const c = (now / 1000) % 8.6;
+            const p = REDUCED ? 1 : c < 2.4 ? io(c / 2.4) : c < 4.4 ? 1 : c < 7 ? 1 - io((c - 4.4) / 2.6) : 0;
+            v.pose('std', stdJoints(p, mv.ex), p, false, mv.ex.hot, p * mv.ex.tuck);
+          } else v.pose('std', moveJoints(mv, o.paused ? o.at : now / 1000, REDUCED), 0.7, false, mv.hot, mv.hot.waist ? 0.6 : 0);
+          o.at = o.paused ? o.at : now / 1000;
+        };
+        v.start();
+      }
+      o.move = move; o.paused = false;
+      o.v.frame(move.cam ? move.ex.cam : move.view);
+      cv.parentElement.hidden = false;
+    } catch (e) { debugNote('3D 示范', e); cv.parentElement.hidden = true; }
+  },
+  pause(cvId, on) { if (this.views[cvId]) this.views[cvId].paused = on; },
+};
+
+/** 动作详情：动画、介绍、练哪里、怎么做 */
+const MoveSheet = {
+  move: null,
+  open(id, canAdd) {
+    const m = this.move = libById(id);
+    if (!m) return;
+    $('moveName').textContent = m.name;
+    $('moveTags').innerHTML = tagHtml(m.tags, '练到');
+    $('moveKind').textContent = m.cam ? '摄像头会数次数、纠正动作' : '跟着小人和倒计时做，没有摄像头纠正';
+    $('moveIntro').textContent = m.intro;
+    $('moveGood').innerHTML = m.good.map((t) => `<li>${t}</li>`).join('');
+    $('moveHow').innerHTML = m.how.map((t) => `<li>${t}</li>`).join('');
+    $('moveEasy').textContent = m.easy || '';
+    $('moveEasy').hidden = !m.easy;
+    $('btnMoveAdd').hidden = !canAdd;
+    $('moveSheet').hidden = false;
+    $('moveSheet').querySelector('.sheet').scrollTop = 0;
+    MoveView.show('move3d', m);
+  },
+  close() { $('moveSheet').hidden = true; },
+};
+
 const PlanUI = {
+  cur: null, filter: '',
+  /** 计划列表 */
   render() {
-    const p = Plan.data, today = new Date().getDay();
-    $('planDayCount').textContent = p.days.length ? `每周 ${p.days.length} 天` : '还没选';
-    $('planDays').innerHTML = WEEK.map(([d, w]) =>
-      `<button class="day${p.days.includes(d) ? ' on' : ''}${d === today ? ' today' : ''}" data-d="${d}" aria-pressed="${p.days.includes(d)}" aria-label="星期${w}">${w}</button>`).join('');
-    $('planItemCount').textContent = p.items.length ? `${p.items.length} 个动作` : '还没选';
-    $('planItems').innerHTML = p.items.map((it, i) => {
-      const ex = exById(it.id);
-      return ex ? `<div class="pitem"><span class="nm"><b>${ex.name}</b><small>${ex.muscles.join(' · ')}</small></span>
-        <span class="stepper"><button data-i="${i}" data-step="-1" aria-label="${ex.name}少一次"${it.reps <= 3 ? ' disabled' : ''}>−</button><output>${it.reps}<small>次</small></output><button data-i="${i}" data-step="1" aria-label="${ex.name}多一次"${it.reps >= 15 ? ' disabled' : ''}>+</button></span>
-        <button class="del" data-del="${i}" aria-label="去掉${ex.name}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></div>` : '';
-    }).join('') || '<p class="empty">还没有动作。点下面的按钮加进来。</p>';
-    $('planAdds').innerHTML = p.items.length >= 8 ? '' : EXERCISES.map((ex) => `<button class="chip" data-add="${ex.id}">+ ${ex.name}</button>`).join('');
-    const n = p.items.reduce((sum, it) => sum + it.reps, 0);
-    $('planTotal').textContent = n ? `${n} 次 · 约 ${Math.max(1, Math.round((n * REP_SEC) / 60))} 分钟` : '–';
-    $('planPresets').innerHTML = PRESETS.map((x, i) => `<button class="chip solid" data-preset="${i}"><b>${x.name}</b>${x.note}</button>`).join('');
+    const card = (p) => `<div class="plancard" data-open="${p.id}" role="button" tabindex="0">
+      <span class="tx"><b>${esc(p.name || '未命名计划')}</b><small>${p.note ? p.note + ' · ' : ''}${Plans.meta(p)}</small>
+      <span class="ptags">${Plans.tags(p).map((t) => `<i>${t}</i>`).join('')}</span></span>
+      <button class="pgo" data-go="${p.id}"${Plans.items(p).length ? '' : ' disabled'}>开始</button></div>`;
+    $('planMine').innerHTML = Plans.mine.map(card).join('') || '<p class="empty">还没有自己的计划。<br>点下面的按钮建一个。</p>';
+    $('planDefault').innerHTML = DEFAULT_PLANS.map(card).join('');
+  },
+  /** 打开一个计划；id 不给 = 新建 */
+  open(id) {
+    this.cur = id ? Plans.get(id) : { id: 'p' + Date.now().toString(36), name: '', items: [] };
+    this.filter = '';
+    this.renderEdit();
+    App.show('planEdit');
+    $('planEdit').scrollTop = 0;
+  },
+  renderEdit() {
+    const p = this.cur, fixed = !!p.fixed;
+    $('planName').value = p.name; $('planName').readOnly = fixed;
+    $('btnPlanDel').textContent = fixed ? '复制一份来改' : '删除计划';
+    const tags = Plans.tags(p);
+    $('planTags').innerHTML = tags.length ? tagHtml(tags, '练到') : '<span>加入动作后，这里会自动标出练到的部位</span>';
+    const items = p.items;
+    $('planItemCount').textContent = items.length ? `${items.length} 个` : '';
+    $('planItems').innerHTML = items.map((it, i) => {
+      const m = libById(it.id);
+      if (!m) return '';
+      const [lo, hi, unit] = m.cam ? [3, 15, '次'] : [20, 120, '秒'];
+      const amount = fixed ? `<span class="amt">${itemText(it)}</span>`
+        : `<span class="stepper"><button data-i="${i}" data-step="-1" aria-label="${m.name}减少"${it.n <= lo ? ' disabled' : ''}>−</button><output>${it.n}<small>${unit}</small></output><button data-i="${i}" data-step="1" aria-label="${m.name}增加"${it.n >= hi ? ' disabled' : ''}>+</button></span>
+        <button class="del" data-del="${i}" aria-label="去掉${m.name}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>`;
+      return `<div class="pitem"><button class="nm" data-info="${m.id}"><b><i class="no">${i + 1}</i>${m.name}</b><small>${m.tags.join(' · ')}${m.sides ? ' · 左右各一半' : ''}</small></button>${amount}</div>`;
+    }).join('') || '<p class="empty">还没有动作。从下面的动作库里加进来。</p>';
+    $('planTotal').textContent = items.length ? `约 ${Plans.mins(p)} 分钟` : '–';
+    $('libCard').hidden = fixed;
+    $('libFilter').innerHTML = ['', ...TAGS].map((t) => `<button class="fchip${t === this.filter ? ' on' : ''}" data-filter="${t}">${t || '全部'}</button>`).join('');
+    $('libList').innerHTML = LIB.filter((m) => !this.filter || m.tags.includes(this.filter)).map((m) =>
+      `<div class="pitem"><button class="nm" data-info="${m.id}"><b>${m.name}${m.cam ? '<em>摄像头纠正</em>' : ''}</b><small>${m.tags.join(' · ')}</small></button><button class="addbtn" data-add="${m.id}" aria-label="把${m.name}加入计划">+</button></div>`).join('');
+    $('btnPlanGo').disabled = !Plans.items(p).length;
+  },
+  /** 改动马上存起来（默认计划不能改） */
+  commit() {
+    const p = this.cur;
+    if (p.fixed) return;
+    if (!Plans.mine.includes(p)) Plans.mine.unshift(p);
+    Plans.save();
+  },
+  add(id) {
+    const p = this.cur, m = libById(id);
+    if (!m || p.fixed || p.items.length >= 30) return;
+    p.items.push({ id, n: m.cam ? 5 : m.secs });
+    this.commit(); this.renderEdit();
+  },
+  back() {
+    const p = this.cur;
+    // 空的、没起名的新计划不留
+    if (p && !p.fixed && !p.items.length && !p.name.trim()) { Plans.mine = Plans.mine.filter((x) => x !== p); Plans.save(); }
+    this.cur = null;
+    this.render();
+    App.show('plan');
   },
   click(e) {
     const el = e.target.closest('button');
     if (!el) return;
-    const p = Plan.data, d = el.dataset;
-    if (d.d != null) { const n = Number(d.d); p.days = p.days.includes(n) ? p.days.filter((x) => x !== n) : [...p.days, n]; }
-    else if (d.step) { const it = p.items[d.i]; it.reps = clamp(it.reps + Number(d.step), 3, 15); }
-    else if (d.del != null) p.items.splice(Number(d.del), 1);
-    else if (d.add) p.items.push({ id: d.add, reps: 5 });
-    else if (d.preset != null) { const x = PRESETS[d.preset]; p.days = [...x.days]; p.items = EXERCISES.map((ex) => ({ id: ex.id, reps: x.reps })); }
+    const p = this.cur, x = el.dataset;
+    if (x.info) return MoveSheet.open(x.info, !p.fixed);
+    if (x.filter != null) { this.filter = x.filter; return this.renderEdit(); }
+    if (x.add) return this.add(x.add);
+    if (x.step) { const it = p.items[x.i], cam = libById(it.id).cam; it.n = cam ? clamp(it.n + Number(x.step), 3, 15) : clamp(it.n + 10 * Number(x.step), 20, 120); }
+    else if (x.del != null) p.items.splice(Number(x.del), 1);
     else return;
-    Plan.save();
-    this.render();
+    this.commit(); this.renderEdit();
+  },
+};
+
+/** 按计划一个接一个练 */
+const Run = {
+  plan: null, i: -1,
+  start(p) {
+    if (!p || !Plans.items(p).length) return;
+    this.plan = { name: p.name || '未命名计划', items: Plans.items(p) };
+    this.i = -1;
+    Plans.last = p.id; Store.set('pilates.lastPlan', p.id);
+    Voice.unlock();
+    this.next();
+  },
+  peek() { return this.plan?.items[this.i + 1]; },
+  next() {
+    if (!this.plan) return;
+    const it = this.plan.items[++this.i];
+    if (!it) return this.done();
+    const m = libById(it.id);
+    if (m.cam) {
+      Follow.stop();
+      App.pick(EXERCISES.indexOf(m.ex), 1);
+      TARGET_REPS = it.n;
+      App.intro();
+    } else Follow.start(m, it.n);
+  },
+  done() {
+    this.plan = null;
+    App.home();
+    Voice.say('计划完成，辛苦了。', 2);
+    App.tab('me');
+  },
+  stop() { this.plan = null; this.i = -1; },
+};
+
+/** 跟着做：3D 小人示范 + 倒计时 + 念要领。没有摄像头 */
+const Follow = {
+  timer: 0, move: null, wake: null,
+  async start(m, secs) {
+    this.stop();
+    Object.assign(this, { move: m, total: secs, left: secs, prep: 5, paused: false, half: false, cueI: 0 });
+    App.phase = 'follow';
+    $('followProg').textContent = Run.plan ? `${Run.plan.name} · ${Run.i + 1} / ${Run.plan.items.length}` : '';
+    $('followName').textContent = m.name;
+    $('followTags').innerHTML = tagHtml(m.tags, '练到');
+    $('followHow').innerHTML = m.how.map((t) => `<li>${t}</li>`).join('');
+    const nx = Run.peek();
+    $('followNext').textContent = nx ? `下一个：${libById(nx.id).name}` : '这是最后一个动作';
+    $('btnFollowPause').textContent = '暂停';
+    this.paint();
+    App.show('follow');
+    $('follow').scrollTop = 0;
+    MoveView.show('follow3d', m);
+    Voice.say(`${m.name}。${m.intro}`, 2);
+    this.last = performance.now();
+    this.timer = setInterval(() => this.tick(), 200);
+    try { this.wake = await navigator.wakeLock?.request('screen'); } catch { /* 没有也不影响 */ }
+  },
+  tick() {
+    const now = performance.now(), dt = Math.min(1, (now - this.last) / 1000), m = this.move;
+    this.last = now;
+    if (this.paused || !m) return;
+    if (this.prep > 0) {
+      this.prep -= dt;
+      if (this.prep <= 0) Voice.say('开始。' + m.how[0], 2);
+    } else {
+      this.left -= dt;
+      const did = this.total - this.left;
+      if (m.sides && !this.half && this.left <= this.total / 2) { this.half = true; Voice.say('换另一边。', 2); }
+      // 每隔十秒左右念下一条要领
+      const ci = Math.floor(did / 10) % m.how.length;
+      if (ci !== this.cueI) { this.cueI = ci; Voice.say(m.how[ci], 0); }
+      if (this.left <= 0) return this.finish();
+    }
+    this.paint();
+  },
+  paint() {
+    const prep = this.prep > 0;
+    $('followSec').textContent = Math.max(0, Math.ceil(prep ? this.prep : this.left));
+    $('followState').textContent = this.paused ? '已暂停' : prep ? '准备' : this.move.sides ? (this.half ? '另一边 · 秒' : '这一边 · 秒') : '秒';
+    $('followBar').style.transform = `scaleX(${prep ? 0 : clamp(1 - this.left / this.total, 0, 1)})`;
+    [...$('followHow').children].forEach((li, i) => li.classList.toggle('on', !prep && i === this.cueI));
+  },
+  pause() {
+    this.paused = !this.paused;
+    $('btnFollowPause').textContent = this.paused ? '继续' : '暂停';
+    MoveView.pause('follow3d', this.paused);
+    if (this.paused) Voice.stop();
+    this.paint();
+  },
+  /** 这个动作结束（做完或者跳过）：做够 10 秒就记一条，然后下一个 */
+  finish() {
+    const m = this.move, did = Math.round(this.total - this.left);
+    this.stop();
+    if (m && did >= 10) Log.add({ at: Date.now(), ex: m.id, kind: 'f', secs: did, full: did >= this.total - 1, ...(Run.plan ? { plan: Run.plan.name } : {}) });
+    if (Run.plan) Run.next(); else App.home();
+  },
+  stop() {
+    clearInterval(this.timer); this.timer = 0; this.move = null;
+    this.wake?.release?.(); this.wake = null;
   },
 };
 const MeUI = {
@@ -1277,28 +1502,27 @@ const MeUI = {
     const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
     const week = WEEK.map(([d, w], i) => ({ d, w, key: dayKey(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + i)) }));
     const days = new Set(list.map((r) => dayKey(new Date(r.at))));
-    const good = list.reduce((n, r) => n + r.good, 0), all = list.reduce((n, r) => n + r.attempts, 0);
+    const good = list.reduce((n, r) => n + (r.good || 0), 0), all = list.reduce((n, r) => n + (r.attempts || 0), 0);
     $('meCount').innerHTML = `${list.length}<small>组</small>`;
     $('meWeek').innerHTML = `${week.filter((x) => days.has(x.key)).length}<small>天</small>`;
     $('meRate').textContent = all ? Math.round((good / all) * 100) + '%' : '–';
     $('meWeekRow').innerHTML = week.map((x) =>
-      `<span class="wd${days.has(x.key) ? ' did' : Plan.data.days.includes(x.d) ? ' plan' : ''}${x.key === dayKey() ? ' today' : ''}"><i></i>${x.w}</span>`).join('');
+      `<span class="wd${days.has(x.key) ? ' did' : ''}${x.key === dayKey() ? ' today' : ''}"><i></i>${x.w}</span>`).join('');
     $('meLogCount').textContent = list.length ? `最近 ${Math.min(list.length, 30)} 组` : '';
     $('meLog').innerHTML = list.slice(0, 30).map((r) => {
-      const ex = exById(r.ex), t = new Date(r.at);
+      const ex = exById(r.ex), t = new Date(r.at), mv = libById(r.ex);
       const when = `${t.getMonth() + 1}月${t.getDate()}日 ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+      if (r.kind === 'f') return `<div class="logitem"><b>${mv?.name ?? r.ex}<small>${when}</small></b><span class="sc full">${r.secs}<small>秒 · 跟做</small></span>${r.plan ? `<p>${esc(r.plan)}${r.full ? '' : ' · 没做完就跳过了'}</p>` : ''}</div>`;
       const note = r.top && ex?.names[r.top] ? `最常出现：${ex.names[r.top]}` : r.good >= r.attempts ? '全部标准' : '';
       return `<div class="logitem"><b>${ex?.name ?? r.ex}<small>${when}</small></b><span class="sc${r.good >= r.attempts ? ' full' : ''}">${r.good} / ${r.attempts}<small>次标准</small></span>
-        <span class="dots">${(r.reps || []).map((ok) => `<i${ok ? '' : ' class="bad"'}></i>`).join('')}</span>${note ? `<p>${note}${r.plan ? ' · 计划内' : ''}</p>` : ''}</div>`;
-    }).join('') || '<p class="empty">还没有记录。<br>用摄像头练完一组，报告会出现在这里。</p>';
+        <span class="dots">${(r.reps || []).map((ok) => `<i${ok ? '' : ' class="bad"'}></i>`).join('')}</span>${note || r.plan ? `<p>${[note, r.plan && esc(r.plan)].filter(Boolean).join(' · ')}</p>` : ''}</div>`;
+    }).join('') || '<p class="empty">还没有记录。<br>练完一个动作，记录会出现在这里。</p>';
     $('btnClearLog').hidden = !list.length;
     $('btnClearLog').textContent = '清空记录';
   },
 };
 
 const App = {
-  planIdx: -1,    // 正在练今日计划里的第几项；-1 = 自由练习
-
   /** 底部三个按钮：计划 / 跟练 / 我的 */
   tab(name) {
     if (this.phase !== 'home' || $(name).hidden === false) return;
@@ -1307,26 +1531,15 @@ const App = {
     if (name === 'home') this.renderToday();
     this.show(name);
   },
-  /** 首页的“今日计划”那一条 */
+  /** 首页的那一条：上次练的计划，点一下直接开始 */
   renderToday() {
-    const items = Plan.today(), el = $('todayPlan');
-    el.hidden = !items.length;
-    if (!items.length) return;
-    const done = Plan.doneSet(), n = items.filter((_, i) => done.has(i)).length, all = n >= items.length;
-    el.classList.toggle('done', all);
-    $('todayHead').textContent = `今日计划 · ${n} / ${items.length}`;
-    $('todayText').textContent = items.map((it) => `${exById(it.id).name} ${it.reps}`).join(' · ');
-    $('todayGo').textContent = all ? '已完成' : n ? '继续' : '开始';
-  },
-  /** 按计划练下一项：换到那个动作、那个次数，进讲解页 */
-  startPlan() {
-    const i = Plan.next();
-    if (i < 0) return;
-    const it = Plan.today()[i];
-    this.phase = 'home';
-    this.pick(EXERCISES.indexOf(exById(it.id)), 1);
-    this.planIdx = i; TARGET_REPS = it.reps;
-    this.intro();
+    const p = Plans.get(Plans.last) || Plans.mine[0], el = $('todayPlan');
+    el.hidden = !p;
+    if (!p) return;
+    this.homePlan = p;
+    $('todayHead').textContent = Plans.last === p.id ? '上次练的计划' : '我的计划';
+    $('todayText').textContent = `${p.name || '未命名计划'} · ${Plans.mins(p)} 分钟`;
+    $('todayGo').textContent = '开始';
   },
   mode: 'camera',
   facing: 'user',
@@ -1341,7 +1554,7 @@ const App = {
 
   /** 切换页面。from = 触发切换的按钮：进入跟练时，深色画面从这个按钮的位置展开 */
   show(id, from) {
-    const all = ['home', 'intro', 'stageScreen', 'summary', 'plan', 'me'].map($);
+    const all = ['home', 'intro', 'stageScreen', 'summary', 'plan', 'me', 'planEdit', 'follow'].map($);
     // 底部三个按钮只在首页、计划、我的这三页出现；当前这一页的按钮变大变亮
     $('tabs').hidden = !['home', 'plan', 'me'].includes(id);
     $('tabs').classList.toggle('over', id !== 'home');
@@ -1538,11 +1751,11 @@ const App = {
       Log.add({
         at: Date.now(), ex: EX.id, good: s.good, attempts: s.attempts, target: TARGET_REPS, seconds: Math.round(s.seconds),
         avgPeak: Math.round(s.avgPeak || 0), top: s.topIssue?.[0] ?? null, reps: s.reps.map((r) => (r.ok ? 1 : 0)),
-        ...(this.planIdx >= 0 && s.attempts >= TARGET_REPS ? { plan: `${dayKey()}#${this.planIdx}` } : {}),
+        ...(Run.plan ? { plan: Run.plan.name } : {}),
       });
     }
-    const nx = this.planIdx >= 0 ? Plan.today()[Plan.next()] : null;
-    $('btnAgain').textContent = nx ? `继续计划：${exById(nx.id).name} · ${nx.reps} 次` : '再练一组';
+    const nx = Run.peek();
+    $('btnAgain').textContent = nx ? `继续计划：${libById(nx.id).name}` : Run.plan ? '完成计划' : '再练一组';
     this.phase = 'done';
     setTimeout(async () => {
       const video = await Rec.stop();
@@ -1647,7 +1860,7 @@ const App = {
     this.source?.stop(); this.source = null;
     this.wake?.release?.(); this.wake = null;
     this.phase = 'home';
-    this.planIdx = -1; TARGET_REPS = 10;
+    Run.stop(); Follow.stop(); TARGET_REPS = 10;
     this.renderToday();
     document.querySelector('#loading .spinner').hidden = false;
     this.show('home');
@@ -1669,10 +1882,38 @@ $('btnTheme').onclick = () => {
   try { localStorage.setItem('homeTheme', darkHome ? 'dark' : 'light'); } catch { /* 忽略 */ }
 };
 
-$('btnStart').onclick = () => { App.planIdx = -1; TARGET_REPS = 10; App.intro(); };
-$('todayPlan').onclick = () => App.startPlan();
+$('btnStart').onclick = () => { Run.stop(); TARGET_REPS = 10; App.intro(); };
+$('todayPlan').onclick = () => Run.start(App.homePlan);
 document.querySelectorAll('#tabs .tab').forEach((el) => { el.onclick = () => App.tab(el.dataset.tab); });
-$('plan').addEventListener('click', (e) => PlanUI.click(e));
+// 计划列表：点“开始”直接练，点卡片其余地方进去看和改
+$('plan').addEventListener('click', (e) => {
+  const go = e.target.closest('[data-go]'), open = e.target.closest('[data-open]');
+  if (go) Run.start(Plans.get(go.dataset.go));
+  else if (e.target.closest('#btnPlanNew')) PlanUI.open(null);
+  else if (open) PlanUI.open(open.dataset.open);
+});
+$('planEdit').addEventListener('click', (e) => PlanUI.click(e));
+$('planName').oninput = () => { const p = PlanUI.cur; if (p && !p.fixed) { p.name = $('planName').value.slice(0, 16); PlanUI.commit(); } };
+$('btnPlanBack').onclick = () => PlanUI.back();
+$('btnPlanGo').onclick = () => Run.start(PlanUI.cur);
+$('btnPlanDel').onclick = () => {
+  const p = PlanUI.cur, el = $('btnPlanDel');
+  if (p.fixed) {            // 默认计划不能改：复制一份到“我的计划”再改
+    const copy = { id: 'p' + Date.now().toString(36), name: p.name.slice(0, 14), items: p.items.map((it) => ({ ...it })) };
+    Plans.mine.unshift(copy); Plans.save();
+    return PlanUI.open(copy.id);
+  }
+  if (el.textContent === '删除计划') { el.textContent = '再点一次，确认删除'; return; }
+  Plans.mine = Plans.mine.filter((x) => x !== p); Plans.save();
+  p.items = []; p.name = '';
+  PlanUI.back();
+};
+$('btnMoveClose').onclick = () => MoveSheet.close();
+$('moveSheet').addEventListener('click', (e) => { if (e.target === $('moveSheet')) MoveSheet.close(); });
+$('btnMoveAdd').onclick = () => { PlanUI.add(MoveSheet.move.id); MoveSheet.close(); };
+$('btnFollowBack').onclick = () => { Voice.stop(); App.home(); };
+$('btnFollowPause').onclick = () => Follow.pause();
+$('btnFollowNext').onclick = () => { Voice.stop(); Follow.finish(); };
 // 清空记录：点两次才真的清，免得误触
 $('btnClearLog').onclick = () => {
   if ($('btnClearLog').textContent === '清空记录') { $('btnClearLog').textContent = '再点一次，确认清空'; return; }
@@ -1726,7 +1967,7 @@ $('btnCopy').onclick = async () => {
 $('btnDemo').onclick = () => App.start('demo', $('btnDemo'));
 $('btnBack').onclick = () => App.home();
 $('btnHome').onclick = () => App.home();
-$('btnAgain').onclick = () => (App.planIdx >= 0 && Plan.next() >= 0 ? App.startPlan() : App.start(App.mode));
+$('btnAgain').onclick = () => (Run.plan ? Run.next() : App.start(App.mode));
 $('btnEnd').onclick = () => App.finish();
 $('btnForce').onclick = () => App.beginWorkout(null);
 $('btnFlip').onclick = () => { App.facing = App.facing === 'user' ? 'environment' : 'user'; App.start('camera'); };
@@ -1740,7 +1981,7 @@ window.__app = App;
 setTimeout(() => Intro3D.set('3d'), 250);
 // 识别模型比较大，排在 3D 后面再开始下载
 if (!new URLSearchParams(location.search).has('demo')) setTimeout(() => loadModel().catch(() => {}), 2000); // 方便调试
-window.__test = { stdJoints, Cmp, Coach, SetupGuide, DemoSource, demoPose, readBody, EXERCISES, pick: (i) => App.pick(i, 1) };
+window.__test = { MOVES, moveJoints, LIB, Plans, PlanUI, Run, Follow, MoveSheet, MoveView, stdJoints, Cmp, Coach, SetupGuide, DemoSource, demoPose, readBody, EXERCISES, pick: (i) => App.pick(i, 1) };
 if (new URLSearchParams(location.search).has('demo')) App.start('demo');
 
 // 把页面文件存在本机（见 sw.js）：第二次打开不用再下载

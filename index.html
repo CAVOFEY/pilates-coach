@@ -8,7 +8,7 @@
 /* 中文字体：OPPO Sans 4.0（可变字重 100–700），已裁剪到只含页面用到的字。改了文字后运行 tools/subset_font.py */
 @font-face {
   font-family: "OPPO Sans";
-  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=35") format("woff2");
+  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=36") format("woff2");
   font-weight: 100 700;
   font-display: swap;
 }
@@ -290,6 +290,65 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 .card h2 { font-size: 16px; display: flex; align-items: baseline; justify-content: space-between; }
 .card h2 small { font-weight: 500; font-size: 12px; color: var(--ink-soft); }
 .hintline { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-soft); }
+/* 计划列表 */
+.plist { display: flex; flex-direction: column; gap: 10px; flex: none; }
+.plancard { display: flex; align-items: center; gap: 12px; padding: 14px 12px 14px 16px; background: #fff; border: 1.5px solid var(--line); border-radius: var(--r-md); cursor: pointer; }
+.plancard .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.plancard b { font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plancard small { font-size: 12px; color: var(--ink-soft); }
+.ptags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px; }
+.ptags i { font-style: normal; font-size: 12px; padding: 3px 9px; border-radius: 999px; background: var(--pink-100); color: var(--ink); }
+.pgo { flex: none; min-height: 40px; padding: 0 18px; border-radius: 999px; font-size: 14px; font-weight: 600; background: var(--pink-500); color: #fff; }
+.pgo:disabled { background: var(--pink-100); color: var(--ink-soft); }
+.addplan { flex: none; min-height: 52px; border-radius: var(--r-md); border: 1.5px dashed var(--teal-300); background: var(--teal-50); color: var(--teal-700); font-size: 15px; font-weight: 600; }
+.sech { flex: none; margin: 8px 0 -6px; font-size: 13px; font-weight: 500; letter-spacing: .14em; color: var(--ink-soft); }
+/* 一个计划 */
+#planEdit, #follow { overflow-y: auto; padding: max(18px, env(safe-area-inset-top)) 22px calc(22px + env(safe-area-inset-bottom)); gap: 16px; background: var(--pink-50); }
+#planEdit > *, #follow > * { flex: none; }
+#planEdit .btn-link, #follow .btn-link { color: var(--ink-soft); padding: 0 6px; }
+.pname { width: 100%; min-height: 50px; padding: 0 2px; border: 0; border-bottom: 2px solid var(--pink-200); border-radius: 0; background: none; font: inherit; font-size: 26px; font-weight: 700; color: var(--ink); outline: none; }
+.pname::placeholder { color: #cdbcc8; font-weight: 500; }
+.pname:focus { border-bottom-color: var(--pink-500); }
+.pname:read-only { border-bottom-color: transparent; }
+.pitem button.nm { text-align: left; }
+.pitem .nm b .no { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-right: 7px; border-radius: 50%; background: var(--pink-100); font-family: var(--font-num); font-style: normal; font-size: 11px; color: var(--ink-soft); vertical-align: 2px; }
+.pitem .nm b em { margin-left: 7px; padding: 2px 7px; border-radius: 999px; background: var(--teal-100); color: var(--teal-700); font-style: normal; font-size: 11px; font-weight: 500; vertical-align: 2px; }
+.pitem .amt { flex: none; font-family: var(--font-num); font-size: 14px; font-weight: 700; color: var(--ink-soft); }
+.addbtn { flex: none; width: 38px; height: 38px; border-radius: 50%; background: var(--teal-100); color: var(--teal-700); font-family: var(--font-num); font-size: 22px; font-weight: 700; line-height: 1; }
+.filters { display: flex; gap: 6px; overflow-x: auto; margin: 0 -14px; padding: 0 14px 2px; scrollbar-width: none; }
+.filters::-webkit-scrollbar { display: none; }
+.fchip { flex: none; min-height: 34px; padding: 0 13px; border-radius: 999px; font-size: 13px; background: var(--pink-50); color: var(--ink-soft); }
+.fchip.on { background: var(--ink); color: #fff; }
+#planEdit .btn-primary { position: sticky; bottom: 0; }
+#planEdit .btn-primary:disabled { opacity: .45; }
+.c3d { touch-action: none; }
+/* 动作详情 */
+#moveSheet { position: absolute; inset: 0; z-index: 9; display: flex; align-items: flex-end; background: rgba(58, 47, 59, .38); animation: fade .2s ease-out both; }
+#moveSheet[hidden] { display: none; }
+.sheet { position: relative; width: 100%; max-height: 92%; overflow-y: auto; padding: 16px 22px calc(22px + env(safe-area-inset-bottom)); border-radius: 26px 26px 0 0; background: var(--pink-50); display: flex; flex-direction: column; gap: 12px; animation: rise .32s var(--out) both; scrollbar-width: none; }
+.sheet > * { flex: none; }
+.sheet .x { position: absolute; z-index: 2; right: 14px; top: 14px; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, .9); color: var(--ink-soft); }
+.sheet .x svg { width: 16px; height: 16px; }
+.sheet .art canvas.c3d, #follow .art canvas.c3d { aspect-ratio: 32 / 21; }
+.sheet h2 { font-size: 24px; letter-spacing: .06em; margin: 2px 0 0; }
+.sheet h3 { margin: 6px 0 -4px; font-size: 13px; font-weight: 500; letter-spacing: .14em; color: var(--ink-soft); }
+.sheet .kind { margin: 0; font-size: 12px; color: var(--teal-700); }
+.sheet .lead { margin: 0; font-size: 15.5px; line-height: 1.65; }
+.sheet ul, .sheet ol { margin: 0; padding-left: 1.3em; font-size: 14.5px; line-height: 1.7; color: var(--ink); }
+.sheet .easy { margin: 0; padding: 12px 14px; border-radius: 14px; background: var(--teal-50); font-size: 13.5px; line-height: 1.6; color: var(--teal-700); }
+/* 跟着做 */
+#follow h1 { font-size: 26px; letter-spacing: .06em; }
+.prog { font-size: 12px; color: var(--ink-soft); max-width: 62%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clock { display: flex; align-items: baseline; justify-content: center; gap: 8px; }
+.clock b { font-family: var(--font-num); font-size: 68px; font-weight: 700; line-height: 1; color: var(--pink-500); font-variant-numeric: tabular-nums; }
+.clock small { font-size: 15px; color: var(--ink-soft); }
+.fbar { height: 6px; border-radius: 3px; background: var(--pink-100); overflow: hidden; }
+.fbar i { display: block; height: 100%; background: var(--teal-300); transform: scaleX(0); transform-origin: 0 50%; transition: transform .25s linear; }
+.howlist { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; counter-reset: how; }
+.howlist li { counter-increment: how; padding: 8px 12px; border-radius: 12px; font-size: 14.5px; line-height: 1.5; color: var(--ink-soft); transition: background-color .3s, color .3s; }
+.howlist li::before { content: counter(how) "　"; font-family: var(--font-num); font-weight: 700; }
+.howlist li.on { background: #fff; color: var(--ink); }
+.frow { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; padding-bottom: 6px; }
 .day { position: relative; aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; font-size: 14px; font-weight: 600; background: var(--pink-50); color: var(--ink-soft); }
 .day.on { background: var(--pink-500); color: #fff; box-shadow: 0 6px 14px rgba(232, 120, 159, .35); }
@@ -664,25 +723,53 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
 
   <!-- 训练计划：每周哪几天练、每次练什么 -->
   <section class="screen" id="plan" hidden>
-    <h1>训练计划</h1>
-    <p class="sub">定好哪几天练、每次练什么。到了训练日，首页会出现今日计划。</p>
-    <div class="card">
-      <h2>每周哪几天练 <small id="planDayCount"></small></h2>
-      <div class="days" id="planDays"></div>
-      <p class="hintline">刚开始建议每周 2 到 3 天，中间隔一天休息。</p>
+    <h1>我的计划</h1>
+    <p class="sub">点「开始」直接练；点计划可以看里面的动作。</p>
+    <div class="plist" id="planMine"></div>
+    <button class="addplan" id="btnPlanNew">＋ 添加计划</button>
+    <h2 class="sech">默认计划</h2>
+    <div class="plist" id="planDefault"></div>
+    <p class="hintline" style="text-align:center">计划只存在这台手机的浏览器里，没有上传。</p>
+  </section>
+
+  <!-- 一个计划：起名字、加动作 -->
+  <section class="screen" id="planEdit" hidden>
+    <div class="intro-top">
+      <button class="btn btn-link" id="btnPlanBack">← 返回</button>
+      <button class="btn btn-link" id="btnPlanDel">删除计划</button>
     </div>
+    <input class="pname" id="planName" maxlength="16" placeholder="给计划取个名字" aria-label="计划的名字" autocomplete="off" enterkeyhint="done">
+    <div class="muscles" id="planTags"></div>
     <div class="card">
-      <h2>每次练什么 <small id="planItemCount"></small></h2>
+      <h2>计划里的动作 <small id="planItemCount"></small></h2>
       <div id="planItems"></div>
-      <div class="adds" id="planAdds"></div>
-      <p class="total"><span>每次合计</span><b id="planTotal"></b></p>
-      <p class="hintline">普拉提讲究少而准：每个动作 5 到 10 次，做慢、做到位，比多做几次有用。</p>
+      <p class="total"><span>合计</span><b id="planTotal"></b></p>
     </div>
-    <div class="card">
-      <h2>不知道怎么排？</h2>
-      <div class="adds" id="planPresets"></div>
+    <div class="card" id="libCard">
+      <h2>动作库 <small>点名字看动画和做法</small></h2>
+      <div class="filters" id="libFilter"></div>
+      <div id="libList"></div>
     </div>
-    <p class="hintline" style="text-align:center">改动会自动保存在这台手机里。</p>
+    <button class="btn btn-primary" id="btnPlanGo">开始训练</button>
+  </section>
+
+  <!-- 跟着做：没有摄像头的动作 -->
+  <section class="screen" id="follow" hidden>
+    <div class="intro-top">
+      <button class="btn btn-link" id="btnFollowBack">← 结束</button>
+      <span class="prog" id="followProg"></span>
+    </div>
+    <div class="art art3d"><canvas id="follow3d" class="c3d" aria-label="可以拖动旋转的 3D 动作示范"></canvas></div>
+    <h1 id="followName"></h1>
+    <div class="muscles" id="followTags"></div>
+    <div class="clock"><b id="followSec">0</b><small id="followState">准备</small></div>
+    <div class="fbar"><i id="followBar"></i></div>
+    <ol class="howlist" id="followHow"></ol>
+    <p class="hintline" id="followNext" style="text-align:center"></p>
+    <div class="frow">
+      <button class="btn btn-ghost" id="btnFollowPause">暂停</button>
+      <button class="btn btn-ghost" id="btnFollowNext">下一个</button>
+    </div>
   </section>
 
   <!-- 我的：这周练了几天、过去每一次的报告 -->
@@ -694,7 +781,7 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
       <div class="stat"><b id="meRate">–</b><span>动作标准率</span></div>
     </div>
     <div class="card">
-      <h2>这一周 <small>虚线圈是计划要练的日子</small></h2>
+      <h2>这一周</h2>
       <div class="week" id="meWeekRow"></div>
     </div>
     <div class="card">
@@ -704,6 +791,24 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
     <button class="btn btn-link" id="btnClearLog" hidden>清空记录</button>
     <p class="hintline" style="text-align:center">记录只存在这台手机的浏览器里，没有上传。</p>
   </section>
+
+  <!-- 动作详情：动画、介绍、练哪里、怎么做 -->
+  <div id="moveSheet" hidden>
+    <div class="sheet" role="dialog" aria-labelledby="moveName">
+      <button class="x" id="btnMoveClose" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+      <div class="art art3d"><canvas id="move3d" class="c3d" aria-label="可以拖动旋转的 3D 动作示范"></canvas></div>
+      <h2 id="moveName"></h2>
+      <div class="muscles" id="moveTags"></div>
+      <p class="kind" id="moveKind"></p>
+      <p class="lead" id="moveIntro"></p>
+      <h3>好处</h3>
+      <ul id="moveGood"></ul>
+      <h3>怎么做</h3>
+      <ol id="moveHow"></ol>
+      <p class="easy" id="moveEasy"></p>
+      <button class="btn btn-primary" id="btnMoveAdd">加入计划</button>
+    </div>
+  </div>
 
   <!-- 底部导航：计划 / 跟练 / 我的 -->
   <nav id="tabs" aria-label="页面切换">
@@ -736,6 +841,6 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
 })();
 </script>
 <link rel="modulepreload" href="./vendor/three.module.min.js">
-<script type="module" src="./app.js?v=35"></script>
+<script type="module" src="./app.js?v=36"></script>
 </body>
 </html>

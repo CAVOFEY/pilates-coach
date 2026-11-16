@@ -161,8 +161,8 @@ export class Viewer {
   }
 
   /** 镜头和垫子对准某个动作的活动范围。mat = [垫子拉长几倍, 垫子中心的 x] */
-  frame({ x = 0.4, dist = 2.55, mat = [1, 0.42] } = {}) {
-    this.target.x = x; this.dist = dist;
+  frame({ x = 0.4, y = 0.22, dist = 2.55, mat = [1, 0.42] } = {}) {
+    this.target.x = x; this.target.y = y; this.dist = dist;
     this.mat.scale.x = mat[0]; this.mat.position.x = mat[1];
   }
 
