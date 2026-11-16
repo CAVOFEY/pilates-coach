@@ -2,7 +2,7 @@
 // 流程：首页 → 摆放（看到全身、躺好）→ 跟练（计数 + 语音纠正）→ 小结
 // 骨架识别用 Google MediaPipe Pose（开源模型，本地运行）；动作标准判定和教练逻辑是本项目自己写的。
 
-import { MOVES, movePose, moveArrows } from './moves.js?v=46';
+import { MOVES, movePose, moveArrows } from './moves.js?v=47';
 const $ = (id) => document.getElementById(id);
 let TARGET_REPS = 10;   // 自由练习一组 10 次；按计划练时换成计划里定的次数
 
@@ -187,12 +187,14 @@ const Sound = {
 
 /** 教练的话：一个索引（哪句话在大文件的哪一段、多长）+ 一个装着所有片段的大文件 */
 const Clips = {
+  on: false,        // 停用中：教练的话都用手机自带的朗读。改回 true 就重新用预先合成的片段（voice/pack.bin）
   index: null, data: null, bufs: new Map(), p: null,
   load() {
+    if (!this.on) return Promise.resolve();
     return (this.p ??= (async () => {
       const [idx, data] = await Promise.all([
-        fetch('./voice/index.json?v=46').then((r) => (r.ok ? r.json() : Promise.reject(new Error('index ' + r.status)))),
-        fetch('./voice/pack.bin?v=46').then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('pack ' + r.status)))),
+        fetch('./voice/index.json?v=47').then((r) => (r.ok ? r.json() : Promise.reject(new Error('index ' + r.status)))),
+        fetch('./voice/pack.bin?v=47').then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('pack ' + r.status)))),
       ]);
       this.index = idx; this.data = data;
     })().catch((e) => { debugNote('语音片段', e); this.p = null; }));
@@ -1342,7 +1344,7 @@ function demoCycle(now) {
 }
 const stdRange = (ex) => (ex.id === 'kneefold' ? [72, ex.top] : [ex.top, 180]);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=46'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=47'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -1501,20 +1503,31 @@ const IntroTalk = {
     const id = ++this.run;
     clearTimeout(this.timer);
     this.mark(-1);
-    Voice.stop();
+    if (!Voice.ok) return;
+    speechSynthesis.cancel();
     const lines = introLines();
-    // 念第 k 句；念完（或者按估计的时间等不到“念完了”）就念下一句
-    const go = (k) => {
-      if (id !== this.run) return;
+    let cur = -1;
+    // 第 k 句开始念了。real = 语音自己报的（准）；否则是按估计时间走到的
+    const begin = (k, real) => {
+      if (id !== this.run || k < cur || (k === cur && !real)) return;
+      cur = k;
       clearTimeout(this.timer);
       this.mark(k < lines.length ? lines[k][0] : -1);
-      if (k >= lines.length) return;
-      let done = false;
-      const next = () => { if (!done) { done = true; go(k + 1); } };
-      const ms = Voice.say(lines[k][1], 2, () => setTimeout(next, 120));
-      this.timer = setTimeout(next, (ms || estSpeak(lines[k][1]) * 1.2) + 1500);
+      if (k < lines.length) this.timer = setTimeout(() => begin(k + 1, false), estSpeak(lines[k][1]));
     };
-    this.timer = setTimeout(() => go(0), 300);
+    // 句子对象要一直留着：有的手机会把排队中的句子回收掉，后面的“开始念了”就收不到
+    this.keep = lines.map(([, text], k) => {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'zh-CN';
+      if (Voice.voice) u.voice = Voice.voice;
+      u.rate = 1.05;
+      // 被打断的旧句子也会触发这些回调，begin 里用编号认出来、不理它
+      u.onstart = () => begin(k, true);
+      if (k === lines.length - 1) u.onend = () => begin(lines.length, true);
+      speechSynthesis.speak(u);
+      return u;
+    });
+    this.timer = setTimeout(() => begin(0, false), 700);
   },
   stop() { this.run++; clearTimeout(this.timer); this.keep = []; this.mark(-1); Voice.stop(); },
 };
