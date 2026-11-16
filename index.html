@@ -8,7 +8,7 @@
 /* 中文字体：OPPO Sans 4.0（可变字重 100–700），已裁剪到只含页面用到的字。改了文字后运行 tools/subset_font.py */
 @font-face {
   font-family: "OPPO Sans";
-  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=45") format("woff2");
+  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=46") format("woff2");
   font-weight: 100 700;
   font-display: swap;
 }
@@ -490,6 +490,13 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 @keyframes rise { from { opacity: 0; transform: translateY(28px); } }
 /* 返回首页：只淡入，比进入快 */
 .enter-fade { animation: fade .22s ease-out both; }
+/* 跟练画面右上角：背景音乐开关 */
+.top-r { display: flex; align-items: center; gap: 8px; }
+.pill.ic { padding: 0; width: 40px; justify-content: center; }
+.pill.ic svg { width: 17px; height: 17px; }
+.pill.ic .slash { opacity: 0; }
+.pill.ic.off { color: rgba(255, 255, 255, .55); }
+.pill.ic.off .slash { opacity: 1; }
 /* 首页、计划、我的之间：新的一页从旁边滑进来，旧的一页往另一边让开 */
 .enter-slide { animation: slideIn .46s var(--out) both; }
 .leave-slide { animation: slideOut .34s var(--out) both; }
@@ -735,7 +742,10 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
     <div class="top">
       <button class="pill" id="btnBack" aria-label="返回">← 返回</button>
       <span class="title" id="stageTitle">摆放手机</span>
-      <button class="pill" id="btnFlip">翻转镜头</button>
+      <span class="top-r">
+        <button class="pill ic" id="btnMusic" aria-label="背景音乐" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="slash" d="M4 4l16 16"/></svg></button>
+        <button class="pill" id="btnFlip">翻转镜头</button>
+      </span>
     </div>
 
     <div id="toast" role="status" aria-live="polite"></div>
@@ -950,6 +960,6 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
 })();
 </script>
 <link rel="modulepreload" href="./vendor/three.module.min.js">
-<script type="module" src="./app.js?v=45"></script>
+<script type="module" src="./app.js?v=46"></script>
 </body>
 </html>

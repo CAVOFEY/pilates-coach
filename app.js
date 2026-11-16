@@ -2,7 +2,7 @@
 // 流程：首页 → 摆放（看到全身、躺好）→ 跟练（计数 + 语音纠正）→ 小结
 // 骨架识别用 Google MediaPipe Pose（开源模型，本地运行）；动作标准判定和教练逻辑是本项目自己写的。
 
-import { MOVES, movePose, moveArrows } from './moves.js?v=45';
+import { MOVES, movePose, moveArrows } from './moves.js?v=46';
 const $ = (id) => document.getElementById(id);
 let TARGET_REPS = 10;   // 自由练习一组 10 次；按计划练时换成计划里定的次数
 
@@ -156,10 +156,65 @@ const Rec = {
 };
 
 // ---------- 语音 + 屏幕提示 ----------
+const Store0 = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+/** 声音都从这里出去：教练的话（预先合成好的片段）和背景音乐。手机浏览器要求在点击里打开 */
+const Sound = {
+  ctx: null, voice: null, music: null, keep: null,
+  init() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!this.ctx) {
+      const c = this.ctx = new AC();
+      this.voice = c.createGain(); this.voice.gain.value = 1; this.voice.connect(c.destination);
+      this.music = c.createGain(); this.music.gain.value = 0; this.music.connect(c.destination);
+      // iPhone 的静音键会把网页合成的声音一起关掉。同时放一段没有声音的普通音频，系统就按“在播放媒体”算，不受静音键影响
+      try {
+        const n = 4000, v = new DataView(new ArrayBuffer(44 + n)), w = (o, t) => [...t].forEach((ch, i) => v.setUint8(o + i, ch.charCodeAt(0)));
+        w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+        v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true); w(36, 'data'); v.setUint32(40, n, true);
+        for (let i = 0; i < n; i++) v.setUint8(44 + i, 128);
+        this.keep = new Audio(URL.createObjectURL(new Blob([v.buffer], { type: 'audio/wav' })));
+        this.keep.loop = true;
+      } catch { /* 没有也能用，只是静音键会管到 */ }
+    }
+    if (this.ctx.state !== 'running') this.ctx.resume?.().catch?.(() => {});
+    this.keep?.play?.().catch?.(() => {});
+    Clips.load();
+  },
+  /** 回到首页：不再占着“在播放媒体” */
+  rest() { this.keep?.pause?.(); },
+};
+
+/** 教练的话：一个索引（哪句话在大文件的哪一段、多长）+ 一个装着所有片段的大文件 */
+const Clips = {
+  index: null, data: null, bufs: new Map(), p: null,
+  load() {
+    return (this.p ??= (async () => {
+      const [idx, data] = await Promise.all([
+        fetch('./voice/index.json?v=46').then((r) => (r.ok ? r.json() : Promise.reject(new Error('index ' + r.status)))),
+        fetch('./voice/pack.bin?v=46').then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('pack ' + r.status)))),
+      ]);
+      this.index = idx; this.data = data;
+    })().catch((e) => { debugNote('语音片段', e); this.p = null; }));
+  },
+  has(k) { return !!this.index && Object.hasOwn(this.index, k); },
+  ms(k) { return this.index[k][2]; },
+  buf(k) {
+    let b = this.bufs.get(k);
+    if (!b) {
+      const [off, len] = this.index[k];
+      b = new Promise((res, rej) => Sound.ctx.decodeAudioData(this.data.slice(off, off + len), res, rej));
+      this.bufs.set(k, b);
+    }
+    return b;
+  },
+};
+
 const Voice = {
   ok: 'speechSynthesis' in window,
-  voice: null,
+  voice: null, run: 0, clipOn: false, nodes: [], next: null, missed: new Set(),
   unlock() {
+    Sound.init();
     if (!this.ok) return;
     const pick = () => {
       const vs = speechSynthesis.getVoices();
@@ -172,24 +227,161 @@ const Voice = {
     u.volume = 0;
     speechSynthesis.speak(u);
   },
-  /** priority: 2 = 打断别的立刻说；1 = 排队；0 = 有人在说就算了 */
+  get synthOn() { return this.ok && (speechSynthesis.speaking || speechSynthesis.pending); },
+  /**
+   * 把一段话拆成已经合成好的片段：先按句号拆，整句有就用整句；没有再按逗号拆。
+   * 有任何一块没有现成的片段，就返回 null，整段话交给手机自带的朗读。每块 = [片段, 后面停多久（秒）]
+   */
+  split(text) {
+    if (!Clips.index || Sound.ctx?.state !== 'running') return null;
+    const out = [];
+    for (const sen of text.split(/[。！？…]+/).map((x) => x.trim()).filter(Boolean)) {
+      if (Clips.has(sen)) { out.push([sen, 0.32]); continue; }
+      const fr = sen.split(/[，、]/).map((x) => x.trim()).filter(Boolean);
+      const miss = fr.find((f) => !Clips.has(f));
+      if (miss) { this.missed.add(miss); return null; }
+      fr.forEach((f, i) => out.push([f, i === fr.length - 1 ? 0.32 : 0.12]));
+    }
+    return out.length ? out : null;
+  },
+  /** priority: 2 = 打断别的立刻说；1 = 排队（最多排一句）；0 = 有人在说就算了。返回这段话要念多久（毫秒），不知道就是 0 */
   say(text, priority = 1, onEnd = null) {
-    if (!this.ok) return Rec.note(text);
-    if (speechSynthesis.speaking || speechSynthesis.pending) {
-      if (priority === 0) return;
-      if (priority === 2) speechSynthesis.cancel();
-      else if (speechSynthesis.pending) return; // 不积压
+    if (this.clipOn || this.synthOn) {
+      if (priority === 0) return 0;
+      if (priority === 2) this.stop();
+      else if (this.clipOn) { if (!this.next) this.next = [text, onEnd]; return 0; }
+      else if (speechSynthesis.pending) return 0; // 不积压
     }
     Rec.note(text);
+    const parts = this.split(text);
+    if (!parts) return this.synth(text, onEnd);
+    const id = ++this.run, c = Sound.ctx;
+    this.clipOn = true;
+    const total = parts.reduce((n, [k, gap]) => n + Clips.ms(k) + gap * 1000, 0);
+    Music.duck(total / 1000);
+    Promise.all(parts.map(([k]) => Clips.buf(k))).then((bufs) => {
+      if (id !== this.run) return;
+      let t = c.currentTime + 0.03;
+      this.nodes = bufs.map((b, i) => {
+        const n = c.createBufferSource();
+        n.buffer = b; n.connect(Sound.voice); n.start(t);
+        t += b.duration + parts[i][1];
+        return n;
+      });
+      this.nodes[this.nodes.length - 1].onended = () => {
+        if (id !== this.run) return;
+        this.clipOn = false; this.nodes = [];
+        onEnd?.();
+        const q = this.next;
+        this.next = null;
+        if (q && !this.clipOn) this.say(q[0], 1, q[1]);
+      };
+    }).catch(() => { if (id === this.run) { this.clipOn = false; this.synth(text, onEnd); } });
+    return total;
+  },
+  /** 手机自带的朗读：没有现成片段时用 */
+  synth(text, onEnd) {
+    if (!this.ok) { onEnd?.(); return 0; }
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'zh-CN';
     if (this.voice) u.voice = this.voice;
     u.rate = 1.05;
     if (onEnd) u.onend = u.onerror = onEnd;
+    Music.duck(estSpeak(text) / 1000);
     speechSynthesis.speak(u);
+    return 0;
   },
-  stop() { if (this.ok) speechSynthesis.cancel(); },
+  stop() {
+    this.run++; this.next = null; this.clipOn = false;
+    for (const n of this.nodes) { n.onended = null; try { n.stop(); } catch { /* 还没开始或已经停了 */ } }
+    this.nodes = [];
+    if (this.ok) speechSynthesis.cancel();
+  },
 };
+
+/**
+ * 背景音乐：现场合成的，没有音频文件。颂钵一样的“铛”——每个音是几个不成整数倍的泛音叠在一起，慢慢衰减，带一点混响。
+ * 一小段 8 秒的旋律（D 大调五声音阶）反复循环，每四遍换一次变化；低音钵每 8 秒敲一下，碰铃偶尔“叮”一声。教练说话的时候自动压低。
+ */
+const Music = {
+  on: !!Store0('pilates.music', 1), timer: 0, bus: null, step: 0, at: 0, VOL: 0.5,
+  N: { D3: 146.83, A3: 220, D5: 587.33, E5: 659.26, 'F#5': 739.99, A5: 880, B5: 987.77, D6: 1174.66 },
+  // 半拍一格（0.5 秒），16 格一遍
+  HOOK: [{ 0: 'F#5', 3: 'A5', 4: 'B5', 6: 'A5', 8: 'F#5', 11: 'E5', 12: 'D5' }, { 0: 'A5', 3: 'B5', 4: 'D6', 6: 'B5', 8: 'A5', 11: 'F#5', 12: 'E5' }],
+  build() {
+    const c = Sound.ctx;
+    const bus = this.bus = c.createGain();
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5200;
+    // 混响：一段慢慢变小的噪声
+    const len = Math.floor(c.sampleRate * 3.2), ir = c.createBuffer(2, len, c.sampleRate);
+    for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 3.2; }
+    const rev = c.createConvolver(); rev.buffer = ir;
+    const wet = c.createGain(); wet.gain.value = 0.55;
+    this.duckG = c.createGain();
+    bus.connect(lp); lp.connect(this.duckG); lp.connect(rev); rev.connect(wet); wet.connect(this.duckG);
+    this.duckG.connect(Sound.music);
+  },
+  /** 敲一下。parts = [[泛音是基音的几倍, 多响, 响多久（秒）], …] */
+  hit(f, t, vel, parts, attack = 0.004) {
+    const c = Sound.ctx;
+    for (const [k, g, d] of parts) {
+      const o = c.createOscillator(), e = c.createGain();
+      o.frequency.value = f * k;
+      e.gain.setValueAtTime(0, t);
+      e.gain.linearRampToValueAtTime(vel * g, t + attack);
+      e.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      o.connect(e); e.connect(this.bus);
+      o.start(t); o.stop(t + d + 0.05);
+    }
+  },
+  bell(f, t, vel = 1) { this.hit(f, t, vel * 0.11, [[1, 1, 4.2], [1.004, 0.5, 4.2], [2, 0.22, 2.4], [2.71, 0.3, 1.8], [5.15, 0.08, 0.8]]); },
+  bowl(f, t) { this.hit(f, t, 0.2, [[1, 1, 7.5], [1.003, 0.6, 7.5], [2.71, 0.28, 4], [5.15, 0.06, 1.6]], 0.02); },
+  ting(t) { this.hit(2637, t, 0.035, [[1, 1, 3.2], [1.011, 0.9, 3.2], [1.5, 0.3, 1.6], [2.26, 0.2, 1]], 0.002); },
+  /** 把 until（秒）之前该敲的音都排好 */
+  tick(until = Sound.ctx.currentTime + 0.6) {
+    while (this.at < until) {
+      const i = this.step % 16, loop = Math.floor(this.step / 16), t = this.at;
+      const note = this.HOOK[loop % 4 === 3 ? 1 : 0][i];
+      if (note) this.bell(this.N[note], t, i === 0 || i === 8 ? 1 : 0.8);
+      if (i === 0) this.bowl(this.N[loop % 2 ? 'A3' : 'D3'], t);
+      if (i === 14 && loop % 2) this.ting(t);
+      this.at += 0.5; this.step++;
+    }
+  },
+  start() {
+    const c = Sound.ctx;
+    this.sync();
+    if (!this.on || !c || this.timer) return;
+    if (!this.bus) this.build();
+    this.step = 0; this.at = c.currentTime + 0.4;
+    const g = Sound.music.gain;
+    g.cancelScheduledValues(c.currentTime); g.setTargetAtTime(this.VOL, c.currentTime, 0.8);
+    this.tick();
+    this.timer = setInterval(() => this.tick(), 150);
+  },
+  stop() {
+    clearInterval(this.timer); this.timer = 0;
+    const c = Sound.ctx;
+    if (c) { const g = Sound.music.gain; g.cancelScheduledValues(c.currentTime); g.setTargetAtTime(0, c.currentTime, 0.35); }
+  },
+  /** 教练要说 sec 秒的话：音乐先压低，说完再慢慢回来 */
+  duck(sec) {
+    const c = Sound.ctx;
+    if (!c || !this.duckG) return;
+    const g = this.duckG.gain, t = c.currentTime;
+    g.cancelScheduledValues(t);
+    g.setTargetAtTime(0.4, t, 0.08);
+    g.setTargetAtTime(1, t + sec + 0.1, 0.5);
+  },
+  toggle() {
+    this.on = !this.on;
+    Store.set('pilates.music', this.on ? 1 : 0);
+    if (this.on) this.start(); else this.stop();
+    this.sync();
+  },
+  sync() { const el = $('btnMusic'); el.classList.toggle('off', !this.on); el.setAttribute('aria-pressed', this.on); },
+};
+
 /** 估计一句话要念多久（毫秒）：按字数算，逗号、句号各停一下 */
 const estSpeak = (text) => 250 + ((text.replace(/[，。]/g, '').length * 215 + (text.match(/，/g) || []).length * 200 + (text.match(/。/g) || []).length * 380) / 1.05);
 /** 念完一段话再做下一步。有的手机收不到“念完了”，所以另外按估计的时间兜底；minMs = 最少等这么久 */
@@ -201,8 +393,8 @@ function speakThen(text, cb, minMs = 0) {
     done = true;
     setTimeout(cb, Math.max(0, minMs - (performance.now() - t0)));
   };
-  Voice.say(text, 2, fire);
-  setTimeout(fire, estSpeak(text) * 1.25 + 2000);
+  const ms = Voice.say(text, 2, fire);
+  setTimeout(fire, (ms || estSpeak(text) * 1.25) + 2000);
 }
 /** 1～99 的中文数字 */
 const cn = (n) => { const d = '零一二三四五六七八九'; return n < 10 ? d[n] : (n < 20 ? '' : d[Math.floor(n / 10)]) + '十' + (n % 10 ? d[n % 10] : ''); };
@@ -1150,7 +1342,7 @@ function demoCycle(now) {
 }
 const stdRange = (ex) => (ex.id === 'kneefold' ? [72, ex.top] : [ex.top, 180]);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=45'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=46'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -1274,6 +1466,34 @@ const introLines = () => [
   ...EX.steps.map(([word, detail, br], i) => [i, `${word}${br ? '，' + BREATH[br] : ''}。${detail}。`]),
   [-1, Run.plan && Run.view < Run.plan.items.length - 1 ? '往左滑，看下一个动作。' : '看明白了，就点开始。'],
 ];
+/**
+ * 教练可能说的每一块话（合成语音片段用）。整句的直接整句合成；里面带数字、动作名的句子，按逗号拆开的每一小块都要有。
+ * 这里漏掉的话不会出错，只是那一句会改用手机自带的朗读。
+ */
+function voiceLines() {
+  const out = new Set();
+  const whole = (t) => String(t).split(/[。！？…]+/).map((x) => x.trim()).filter(Boolean).forEach((x) => out.add(x));
+  const bits = (t) => String(t).split(/[。！？…，、]+/).map((x) => x.trim()).filter(Boolean).forEach((x) => out.add(x));
+  for (const m of LIB) {
+    const ex = m.ex;
+    Object.values(ex.say).forEach(whole);
+    Object.values(ex.cues).forEach(whole);
+    whole(ex.pos); whole(ex.cue);
+    bits(ex.name); bits(`${ex.name}完成`);
+    ex.steps.forEach(([word, detail, br]) => whole(`${word}${br ? '，' + BREATH[br] : ''}。${detail}。`));
+  }
+  for (let n = 1; n <= 15; n++) {
+    out.add(String(n)); out.add(`第${cn(n)}个`); out.add(`${n} 次`);
+    for (let g = 0; g <= n; g++) out.add(`${n} 次里有 ${g} 次标准`);
+  }
+  ['准备好了。不用看屏幕，跟着我的口令做。', '计划完成，辛苦了。', '看不到你了，回到画面里。', '这次先到这里。', '很好。', '换另一边。', '加油，还剩三个。', '最后一个，坚持住。',
+    '往左滑，看下一个动作。', '看明白了，就点开始。',
+    '把手机横过来立稳，侧面对着你。已经横着放了的话，请先关掉手机的竖屏锁定。', '我还没看到你。把手机立稳，退后两三步。', '看不到你的腿和脚，手机再放远一点。', '看不到你的头和肩，调一下手机角度。',
+    '你太靠画面下边了。把手机往下压一点，让身体在画面中间。', '你太靠画面上边了。把手机往上抬一点，让身体在画面中间。', '画面方向不对。请先关掉手机的竖屏锁定，再把手机横过来。',
+    '看到你了。侧对手机躺下，屈膝，双脚踩地。', '把膝盖弯起来，双脚踩在垫子上。'].forEach(whole);
+  ['OK', '完成', '休息一下', '准备', '准备好了', '先看一遍', '最后一个'].forEach((x) => out.add(x));
+  return [...out];
+}
 const IntroTalk = {
   run: 0, timer: 0, keep: [],
   mark(n) { [...$('introSteps').children].forEach((li, i) => li.classList.toggle('on', i === n)); },
@@ -1281,31 +1501,20 @@ const IntroTalk = {
     const id = ++this.run;
     clearTimeout(this.timer);
     this.mark(-1);
-    if (!Voice.ok) return;
-    speechSynthesis.cancel();
+    Voice.stop();
     const lines = introLines();
-    let cur = -1;
-    // 第 k 句开始念了。real = 语音自己报的（准）；否则是按估计时间走到的
-    const begin = (k, real) => {
-      if (id !== this.run || k < cur || (k === cur && !real)) return;
-      cur = k;
+    // 念第 k 句；念完（或者按估计的时间等不到“念完了”）就念下一句
+    const go = (k) => {
+      if (id !== this.run) return;
       clearTimeout(this.timer);
       this.mark(k < lines.length ? lines[k][0] : -1);
-      if (k < lines.length) this.timer = setTimeout(() => begin(k + 1, false), estSpeak(lines[k][1]));
+      if (k >= lines.length) return;
+      let done = false;
+      const next = () => { if (!done) { done = true; go(k + 1); } };
+      const ms = Voice.say(lines[k][1], 2, () => setTimeout(next, 120));
+      this.timer = setTimeout(next, (ms || estSpeak(lines[k][1]) * 1.2) + 1500);
     };
-    // 句子对象要一直留着：有的手机会把排队中的句子回收掉，后面的“开始念了”就收不到
-    this.keep = lines.map(([, text], k) => {
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'zh-CN';
-      if (Voice.voice) u.voice = Voice.voice;
-      u.rate = 1.05;
-      // 被打断的旧句子也会触发这些回调，begin 里用编号认出来、不理它
-      u.onstart = () => begin(k, true);
-      if (k === lines.length - 1) u.onend = () => begin(lines.length, true);
-      speechSynthesis.speak(u);
-      return u;
-    });
-    this.timer = setTimeout(() => begin(0, false), 700);
+    this.timer = setTimeout(() => go(0), 300);
   },
   stop() { this.run++; clearTimeout(this.timer); this.keep = []; this.mark(-1); Voice.stop(); },
 };
@@ -1930,6 +2139,7 @@ const App = {
   async start(mode, from) {
     this.mode = mode;
     Voice.unlock();
+    Music.start();
     this.show('stageScreen', from);
     this.phase = 'loading';
     $('loading').hidden = false;
@@ -2155,6 +2365,7 @@ const App = {
   finish() {
     if (this.phase === 'done') return;
     if (Run.plan) return this.planEnd(false);
+    Music.stop();
     const s = this.coach ? this.coach.summary(performance.now()) : null;
     this.lastRun = s && {
       at: new Date().toISOString(), mode: this.mode, facing: this.facing, video: this.size,
@@ -2265,6 +2476,7 @@ const App = {
 
   home() {
     Voice.stop();
+    Music.stop(); Sound.rest();
     Rec.stop(true);
     this.source?.stop(); this.source = null;
     this.wake?.release?.(); this.wake = null;
@@ -2335,6 +2547,8 @@ $('btnClearLog').onclick = () => {
 };
 App.renderToday();
 arcTabs('home');
+// 教练的语音片段有 4MB：打开页面后就在后台先取着，等到开始练的时候已经在手机里了
+setTimeout(() => Clips.load(), 1500);
 // 在首页、计划、我的这三页的空白处左右滑：换到旁边那一页（按钮、示范区、计划卡片上的滑动各管各的）
 {
   let sw = null;
@@ -2416,6 +2630,8 @@ $('btnCopy').onclick = async () => {
 $('btnDemo').onclick = () => App.start('demo', $('btnDemo'));
 $('btnBack').onclick = () => App.home();
 $('btnHome').onclick = () => App.home();
+$('btnMusic').onclick = () => Music.toggle();
+Music.sync();
 $('btnPdDone').onclick = () => App.tab('me');
 $('btnPdAgain').onclick = () => Run.start(Plans.get(App.planReport?.id));
 $('btnAgain').onclick = () => App.start(App.mode);
@@ -2432,7 +2648,7 @@ window.__app = App;
 setTimeout(() => Intro3D.set('3d'), 250);
 // 识别模型比较大，排在 3D 后面再开始下载
 if (!new URLSearchParams(location.search).has('demo')) setTimeout(() => loadModel().catch(() => {}), 2000); // 方便调试
-window.__test = { TEMPO, MOVES, movePose, moveArrows, LIB, Plans, PlanUI, Run, Card, MoveSheet, MoveView, Voice, stdJoints, Cmp, Coach, SetupGuide, DemoSource, demoPose, readBody, EXERCISES, pick: (i) => App.pick(i, 1) };
+window.__test = { Sound, Clips, Music, voiceLines, TEMPO, MOVES, movePose, moveArrows, LIB, Plans, PlanUI, Run, Card, MoveSheet, MoveView, Voice, stdJoints, Cmp, Coach, SetupGuide, DemoSource, demoPose, readBody, EXERCISES, pick: (i) => App.pick(i, 1) };
 if (new URLSearchParams(location.search).has('demo')) App.start('demo');
 
 // 把页面文件存在本机（见 sw.js）：第二次打开不用再下载
