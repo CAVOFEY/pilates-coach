@@ -2,7 +2,7 @@
 // 流程：首页 → 摆放（看到全身、躺好）→ 跟练（计数 + 语音纠正）→ 小结
 // 骨架识别用 Google MediaPipe Pose（开源模型，本地运行）；动作标准判定和教练逻辑是本项目自己写的。
 
-import { MOVES, movePose, moveArrows } from './moves.js?v=47';
+import { MOVES, movePose, moveArrows } from './moves.js?v=48';
 const $ = (id) => document.getElementById(id);
 let TARGET_REPS = 10;   // 自由练习一组 10 次；按计划练时换成计划里定的次数
 
@@ -193,8 +193,8 @@ const Clips = {
     if (!this.on) return Promise.resolve();
     return (this.p ??= (async () => {
       const [idx, data] = await Promise.all([
-        fetch('./voice/index.json?v=47').then((r) => (r.ok ? r.json() : Promise.reject(new Error('index ' + r.status)))),
-        fetch('./voice/pack.bin?v=47').then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('pack ' + r.status)))),
+        fetch('./voice/index.json?v=48').then((r) => (r.ok ? r.json() : Promise.reject(new Error('index ' + r.status)))),
+        fetch('./voice/pack.bin?v=48').then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('pack ' + r.status)))),
       ]);
       this.index = idx; this.data = data;
     })().catch((e) => { debugNote('语音片段', e); this.p = null; }));
@@ -306,6 +306,7 @@ const Voice = {
  * 一小段 8 秒的旋律（D 大调五声音阶）反复循环，每四遍换一次变化；低音钵每 8 秒敲一下，碰铃偶尔“叮”一声。教练说话的时候自动压低。
  */
 const Music = {
+  off: true,        // 背景音乐停用中：改成 false 就恢复（跟练画面右上角的按钮也会回来）
   on: !!Store0('pilates.music', 1), timer: 0, bus: null, step: 0, at: 0, VOL: 0.5,
   N: { D3: 146.83, A3: 220, D5: 587.33, E5: 659.26, 'F#5': 739.99, A5: 880, B5: 987.77, D6: 1174.66 },
   // 半拍一格（0.5 秒），16 格一遍
@@ -353,7 +354,7 @@ const Music = {
   start() {
     const c = Sound.ctx;
     this.sync();
-    if (!this.on || !c || this.timer) return;
+    if (this.off || !this.on || !c || this.timer) return;
     if (!this.bus) this.build();
     this.step = 0; this.at = c.currentTime + 0.4;
     const g = Sound.music.gain;
@@ -381,7 +382,7 @@ const Music = {
     if (this.on) this.start(); else this.stop();
     this.sync();
   },
-  sync() { const el = $('btnMusic'); el.classList.toggle('off', !this.on); el.setAttribute('aria-pressed', this.on); },
+  sync() { const el = $('btnMusic'); el.hidden = this.off; el.classList.toggle('off', !this.on); el.setAttribute('aria-pressed', this.on); },
 };
 
 /** 估计一句话要念多久（毫秒）：按字数算，逗号、句号各停一下 */
@@ -396,7 +397,7 @@ function speakThen(text, cb, minMs = 0) {
     setTimeout(cb, Math.max(0, minMs - (performance.now() - t0)));
   };
   const ms = Voice.say(text, 2, fire);
-  setTimeout(fire, (ms || estSpeak(text) * 1.25) + 2000);
+  setTimeout(fire, (ms || estSpeak(text) * 1.15) + 900);
 }
 /** 1～99 的中文数字 */
 const cn = (n) => { const d = '零一二三四五六七八九'; return n < 10 ? d[n] : (n < 20 ? '' : d[Math.floor(n / 10)]) + '十' + (n % 10 ? d[n % 10] : ''); };
@@ -1344,7 +1345,7 @@ function demoCycle(now) {
 }
 const stdRange = (ex) => (ex.id === 'kneefold' ? [72, ex.top] : [ex.top, 180]);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=47'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=48'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -2299,7 +2300,7 @@ const App = {
       this.coach = new Coach(EX, n ? this.restS.reduce((a, c) => a + c, 0) / n : null, () => this.moveDone());
       Card.show(false);
       this.phase = 'work';
-    }, 5000);
+    }, 3500);
   },
 
   /** 把刚做的这个动作记到“我的”里；按计划练时也记进这一次计划的结果。full = 是不是做完了 */
@@ -2334,7 +2335,7 @@ const App = {
       if (last) return this.planEnd(true);
       Run.i++;
       this.prepMove(false);
-    }, last ? 1500 : 4500);
+    }, last ? 1200 : 3000);
   },
 
   /** 按计划练结束（done = 全部做完；否则是中途点了结束）：给一页报告。一个动作都没做就直接回首页 */
