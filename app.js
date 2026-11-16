@@ -2,7 +2,7 @@
 // 流程：首页 → 摆放（看到全身、躺好）→ 跟练（计数 + 语音纠正）→ 小结
 // 骨架识别用 Google MediaPipe Pose（开源模型，本地运行）；动作标准判定和教练逻辑是本项目自己写的。
 
-import { MOVES, moveJoints } from './moves.js?v=40';
+import { MOVES, movePose } from './moves.js?v=41';
 const $ = (id) => document.getElementById(id);
 let TARGET_REPS = 10;   // 自由练习一组 10 次；按计划练时换成计划里定的次数
 
@@ -173,7 +173,7 @@ const Voice = {
     speechSynthesis.speak(u);
   },
   /** priority: 2 = 打断别的立刻说；1 = 排队；0 = 有人在说就算了 */
-  say(text, priority = 1) {
+  say(text, priority = 1, onEnd = null) {
     if (!this.ok) return Rec.note(text);
     if (speechSynthesis.speaking || speechSynthesis.pending) {
       if (priority === 0) return;
@@ -185,10 +185,27 @@ const Voice = {
     u.lang = 'zh-CN';
     if (this.voice) u.voice = this.voice;
     u.rate = 1.05;
+    if (onEnd) u.onend = u.onerror = onEnd;
     speechSynthesis.speak(u);
   },
   stop() { if (this.ok) speechSynthesis.cancel(); },
 };
+/** 估计一句话要念多久（毫秒）：按字数算，逗号、句号各停一下 */
+const estSpeak = (text) => 250 + ((text.replace(/[，。]/g, '').length * 215 + (text.match(/，/g) || []).length * 200 + (text.match(/。/g) || []).length * 380) / 1.05);
+/** 念完一段话再做下一步。有的手机收不到“念完了”，所以另外按估计的时间兜底；minMs = 最少等这么久 */
+function speakThen(text, cb, minMs = 0) {
+  const t0 = performance.now();
+  let done = false;
+  const fire = () => {
+    if (done) return;
+    done = true;
+    setTimeout(cb, Math.max(0, minMs - (performance.now() - t0)));
+  };
+  Voice.say(text, 2, fire);
+  setTimeout(fire, estSpeak(text) * 1.25 + 2000);
+}
+/** 1～99 的中文数字 */
+const cn = (n) => { const d = '零一二三四五六七八九'; return n < 10 ? d[n] : (n < 20 ? '' : d[Math.floor(n / 10)]) + '十' + (n % 10 ? d[n % 10] : ''); };
 
 let toastTimer = 0;
 function toast(text, kind = 'cue', ms = 2600) {
@@ -238,8 +255,10 @@ function readBody(lms) {
 
 // ---------- 摆放引导：缺哪个部位说哪个，躺好后自动开始 ----------
 class SetupGuide {
-  constructor(onReady) {
+  /** loose = 只确认全身都在画面里，不要求先躺好（按计划练时，每个动作的起始姿势不一样） */
+  constructor(onReady, loose = false) {
     this.onReady = onReady;
+    this.loose = loose;
     this.lastSay = -1e9;
     this.lastKey = '';
     this.readySince = null;
@@ -290,7 +309,7 @@ class SetupGuide {
     }
     const lying = b.torsoTilt < 35;
     const kneesBent = b.kneeAngle != null && b.kneeAngle > 40 && b.kneeAngle < 140;
-    if (!lying) {
+    if (!this.loose && !lying) {
       this.readySince = null;
       // 画面是竖的，人在画面里也是“竖”的：多半是手机横着放了，但开着竖屏锁定，画面被转了 90 度
       if (App.mode === 'camera' && App.size.h > App.size.w * 1.1 && b.torsoTilt > 55) {
@@ -298,13 +317,13 @@ class SetupGuide {
       }
       return this.hint('lie', '看到你了。侧对手机躺下，屈膝，双脚踩地。', t);
     }
-    if (!kneesBent || b.hipAngle > 152) {
+    if (!this.loose && (!kneesBent || b.hipAngle > 152)) {
       this.readySince = null;
       return this.hint('bend', '把膝盖弯起来，双脚踩在垫子上。', t);
     }
     // 姿势对了，保持 1.5 秒确认，同时记录休息时的髋角
     if (this.readySince == null) { this.readySince = t; this.restSamples = []; }
-    const v0 = EX.value(b);
+    const v0 = this.loose ? null : EX.value(b);
     if (v0 != null) this.restSamples.push(v0);
     this.hint('hold', '很好，保持不动…', t, false);
     $('holdBar').style.transform = `scaleX(${clamp((t - this.readySince) / 1500, 0, 1)})`;
@@ -327,6 +346,7 @@ const REST_WITH_CUE = 6.5;                             // 要纠正动作时，�
 const EXERCISES = [
   {
     id: 'bridge', name: '桥式', muscles: ['臀部', '大腿后侧', '核心'],
+    pos: '平躺在垫子上，双腿屈膝，双脚踩地', cue: '夹紧臀部，把髋往上顶，抬成一条直线',
     steps: [['躺好', '屈膝，双脚踩地，手放两边', ''], ['抬起', '夹紧臀部，抬成一条直线', 'out'], ['停住', '在最高处停一下', 'in'], ['放下', '慢慢放回垫子', 'out']],
     seg: { up: '呼气，抬起', hold: '停住，吸气', down: '呼气，放下', rest: '吸气，准备' },
     say: { up: '呼气，抬起。', hold: '停住，吸气。', almost: '停住，再抬高一点。', down: '呼气，慢慢放下。' },
@@ -368,6 +388,7 @@ const EXERCISES = [
   },
   {
     id: 'kneefold', name: '屈膝抬腿', muscles: ['下腹', '核心', '髋前侧'],
+    pos: '平躺在垫子上，双腿屈膝，双脚踩地', cue: '收紧肚子，把腿抬到大腿竖直，腰贴住垫子',
     steps: [['躺好', '屈膝，双脚踩地，手放两边', ''], ['抬腿', '收紧肚子，抬到大腿竖直', 'out'], ['停住', '小腿放平，脚放松，腰贴垫子', 'in'], ['放下', '脚尖慢慢点回垫子', 'out']],
     seg: { up: '呼气，抬腿', hold: '停住，吸气', down: '呼气，放下', rest: '吸气，准备' },
     say: { up: '呼气，抬腿。', hold: '停住，吸气。', almost: '停住，膝盖再抬高一点。', down: '呼气，慢慢放下。' },
@@ -398,6 +419,7 @@ const EXERCISES = [
   },
   {
     id: 'heelslide', name: '脚跟滑动', muscles: ['核心', '骨盆稳定'],
+    pos: '平躺在垫子上，双腿屈膝，双脚踩地', cue: '脚跟贴着垫子把腿滑直，骨盆不要晃',
     steps: [['躺好', '屈膝，双脚踩地，手放两边', ''], ['伸腿', '勾脚，脚跟贴着垫子把腿滑直', 'out'], ['停住', '腿伸直，腰不要拱起来', 'in'], ['收回', '脚跟贴着垫子滑回来', 'out']],
     seg: { up: '呼气，伸腿', hold: '停住，吸气', down: '呼气，收回', rest: '吸气，准备' },
     say: { up: '呼气，伸腿。', hold: '停住，吸气。', almost: '停住，腿再伸直一点。', down: '呼气，慢慢收回。' },
@@ -431,10 +453,13 @@ class Coach {
     this.ex = ex;
     const d = this.d = ex.dir;
     // 内部都换算成“越大越到位”的数，这样三个动作用同一套判断
-    this.rest = d * clamp(restAngle ?? (ex.rest[0] + ex.rest[1]) / 2, ex.rest[0], ex.rest[1]);
+    this.rest = ex.free ? 0 : d * clamp(restAngle ?? (ex.rest[0] + ex.rest[1]) / 2, ex.rest[0], ex.rest[1]);
     this.startThr = this.rest + ex.start;
     this.top = d * ex.top; this.full = d * ex.full;
     this.onFinish = onFinish;
+    // 摄像头不判定的动作：只按节拍喊口令，进度条跟着节拍走
+    this.free = !!ex.free;
+    if (this.free) { this.rest = 0; this.startThr = 0.2; this.top = 1; this.full = 1; }
     this.a = this.rest;       // 平滑后的角度
     this.seg = 'rest';        // 当前口令段：up / hold / down / rest
     this.segStart = 0;
@@ -457,6 +482,12 @@ class Coach {
   update(b, t) {
     if (this.done) return;
     if (this.t0 == null) { this.t0 = t; this.enter('up', t); }
+    if (this.free) {
+      this.a = stdLift(this.seg, (t - this.segStart) / 1000);
+      this.atTop = this.seg === 'hold';
+      if (t - this.segStart >= this.segLen * 1000) this.enter({ up: 'hold', hold: 'down', down: 'rest', rest: 'up' }[this.seg], t);
+      return;
+    }
     const val = b ? this.ex.value(b) : null;
     if (val == null) b = null;
     else this.a += (this.d * val - this.a) * 0.45;
@@ -502,7 +533,8 @@ class Coach {
     const c = this.cur, ex = this.ex;
     c.peakAngle = this.d * c.peak;
     let issue = null;
-    if (c.peak <= this.startThr) issue = 'miss';
+    if (this.free) { c.counted = true; this.count++; }
+    else if (c.peak <= this.startThr) issue = 'miss';
     else if (!c.counted) issue = 'low';
     else if ((issue = ex.extra?.(c) ?? null)) { /* 这个动作特有的问题 */ }
     else if (c.topAt - c.t0 < 1500) issue = 'fast';
@@ -530,13 +562,20 @@ class Coach {
         say += ex.cues[issue];
         this.segLen = REST_WITH_CUE;
       }
-    } else if (n % 3 === 0) {
+    } else if (n % 3 === 0 && !this.free) {
       toast('很好，就是这样', 'good', 1800);
       say += '很好。';
     }
     const left = TARGET_REPS - n;
-    if (left === 2) say += '还剩两个。';
-    else if (left === 1) say += '最后一个。';
+    // 分左右做的动作：做到一半换边，多留几秒换姿势
+    if (ex.sides === 'half' && n === Math.ceil(TARGET_REPS / 2)) {
+      toast('换另一边', 'info', 3200);
+      say += '换另一边。';
+      this.segLen = REST_WITH_CUE + 1.5;
+    }
+    // 快做完了：报还剩几个，鼓一下劲
+    if (left === 3 && TARGET_REPS >= 5) say += '加油，还剩三个。';
+    else if (left === 1) say += '最后一个，坚持住。';
     Voice.say(say, 2);
   }
 
@@ -880,7 +919,7 @@ function drawSkeleton(ctx, lms, w, state) {
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   }
   // 教练盯着看的那条线（桥式是肩 → 髋 → 膝）
-  if (state.core) {
+  if (state.core && EX.line) {
     const [sh, hip, kn] = EX.line.map((n) => lms[P[state.side + n]]);
     ctx.lineWidth = lw * 2.1;
     ctx.strokeStyle = state.cue ? '#e8789f' : state.atTop ? '#3bb8a6' : '#ffffff';
@@ -912,7 +951,7 @@ function startFigure(cvId, hostId) {
   const UP = 2.4, HOLD = 2.0, DOWN = 2.6, REST = 1.6, CYCLE = UP + HOLD + DOWN + REST;
   let glow = 0, last = 0;
   const frame = (now) => {
-    if (!host.hidden && !document.hidden) {
+    if (!host.hidden && !document.hidden && EX.pose) {
       const cyc = (now / 1000) % CYCLE;
       let p = cyc < UP ? io(cyc / UP) : cyc < UP + HOLD ? 1 : cyc < UP + HOLD + DOWN ? 1 - io((cyc - UP - HOLD) / DOWN) : 0;
       if (REDUCED) p = 1; // 减弱动效：停在顶端姿势
@@ -1046,9 +1085,18 @@ function idealHeelslide(R) {
 /** 标准动作在每段口令里做到几成 */
 const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg === 'hold' ? 1 : seg === 'down' ? 1 - ease(clamp(sec / 3.4, 0, 1)) : 0);
 /** 这个动作“标准”的角度范围 [小, 大] */
+/** 示范小人做到 p（0~1）时的关节位置。rep = 第几次（左右交替的动作靠它换边） */
+const exJoints = (ex, p, rep = 0) => (ex.free ? movePose(ex.move, p, rep) : stdJoints(p, ex));
+/** 示范动画循环到哪了：抬起 2.4 秒，停 2 秒，放下 2.6 秒，休息 1.6 秒。eff = 用力的表情：开始发力 1 秒后出现，开始放下 1 秒后恢复 */
+function demoCycle(now) {
+  const io = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+  const c = (now / 1000) % 8.6;
+  const p = REDUCED ? 1 : c < 2.4 ? io(c / 2.4) : c < 4.4 ? 1 : c < 7 ? 1 - io((c - 4.4) / 2.6) : 0;
+  return { c, p, rep: Math.floor(now / 8600), eff: !REDUCED && c >= 1 && c < 5.4 };
+}
 const stdRange = (ex) => (ex.id === 'kneefold' ? [72, ex.top] : [ex.top, 180]);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=40'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=41'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -1062,14 +1110,12 @@ const Intro3D = {
         if (!this.viewer) {
           const v = this.viewer = new m.Viewer($('intro3d'));
           v.figure('std');
-          const io = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
           v.onTick = (now) => {
-            // 和平面示范同一个节奏：抬起 2.4 秒，停 2 秒，放下 2.6 秒，休息 1.6 秒
-            const c = (now / 1000) % 8.6;
-            const p = REDUCED ? 1 : c < 2.4 ? io(c / 2.4) : c < 4.4 ? 1 : c < 7 ? 1 - io((c - 4.4) / 2.6) : 0;
+            const { c, p, rep, eff } = demoCycle(now);
             if (this.exId !== EX.id) { this.exId = EX.id; v.frame(EX.cam); }   // 换了动作：镜头对准新动作的范围
-            v.arrowAt(stdJoints(p), REDUCED ? null : c, EX.arrow);
-            v.pose('std', stdJoints(p), p, !REDUCED && c >= 1 && c < 5.9, EX.hot, p * EX.tuck);   // 最后一个数：核心收紧多少，肚子跟着变扁   // 开始抬起 1 秒后做用力的表情，到开始放下 1.5 秒后恢复
+            const J = exJoints(EX, p, rep);
+            v.arrowAt(J, REDUCED || !EX.arrow ? null : c, EX.arrow || {});
+            v.pose('std', J, p, eff, EX.hot, p * EX.tuck);   // 最后一个数：核心收紧多少，肚子跟着变扁
           };
           v.start();
         }
@@ -1161,7 +1207,7 @@ const Cmp = {
     while (i < fr.length - 2 && fr[i + 1].t < at) i++;
     const a = fr[i], b = fr[i + 1], k = clamp((at - a.t) / (b.t - a.t || 1), 0, 1);
     this.viewer.arrowAt(a.J, a.seg === 'up' ? a.sec : null, EX.arrow);
-    this.viewer.pose('you', lerpJ(a.J, b.J, k), 0, a.seg === 'hold' || (a.seg === 'up' && a.sec >= 1) || (a.seg === 'down' && a.sec < 1.5));
+    this.viewer.pose('you', lerpJ(a.J, b.J, k), 0, a.seg === 'hold' || (a.seg === 'up' && a.sec >= 1) || (a.seg === 'down' && a.sec < 1));
     this.viewer.pose('std', lerpJ(d.rest, d.top, stdLift(a.seg, a.sec + ((b.t - a.t) * k) / 1000)));
   },
 };
@@ -1170,9 +1216,9 @@ const Cmp = {
 // 讲解页的语音：一行一句，念到哪一行，屏幕上哪一行亮起来。[亮第几行（-1 = 都不亮）, 念什么]
 const BREATH = { out: '呼气', in: '吸气' };
 const introLines = () => [
-  [-1, `${EX.name}。先看一遍。`],
+  [-1, Run.plan ? `第${cn(Run.view + 1)}个，${EX.name}，${TARGET_REPS} 次。` : `${EX.name}。先看一遍。`],
   ...EX.steps.map(([word, detail, br], i) => [i, `${word}${br ? '，' + BREATH[br] : ''}。${detail}。`]),
-  [-1, '看明白了，就点开始。'],
+  [-1, Run.plan && Run.view < Run.plan.items.length - 1 ? '往左滑，看下一个动作。' : '看明白了，就点开始。'],
 ];
 const IntroTalk = {
   run: 0, timer: 0, keep: [],
@@ -1184,8 +1230,6 @@ const IntroTalk = {
     if (!Voice.ok) return;
     speechSynthesis.cancel();
     const lines = introLines();
-    // 估计一句话要念多久（毫秒）：按字数算，逗号、句号各停一下
-    const est = (text) => 250 + ((text.replace(/[，。]/g, '').length * 215 + (text.match(/，/g) || []).length * 200 + (text.match(/。/g) || []).length * 380) / 1.05);
     let cur = -1;
     // 第 k 句开始念了。real = 语音自己报的（准）；否则是按估计时间走到的
     const begin = (k, real) => {
@@ -1193,7 +1237,7 @@ const IntroTalk = {
       cur = k;
       clearTimeout(this.timer);
       this.mark(k < lines.length ? lines[k][0] : -1);
-      if (k < lines.length) this.timer = setTimeout(() => begin(k + 1, false), est(lines[k][1]));
+      if (k < lines.length) this.timer = setTimeout(() => begin(k + 1, false), estSpeak(lines[k][1]));
     };
     // 句子对象要一直留着：有的手机会把排队中的句子回收掉，后面的“开始念了”就收不到
     this.keep = lines.map(([, text], k) => {
@@ -1225,24 +1269,38 @@ const Log = {
   add(r) { this.list.unshift(r); this.list.length = Math.min(this.list.length, 80); Store.set('pilates.log', this.list); },
   clear() { this.list = []; Store.set('pilates.log', this.list); },
 };
-// ---------- 动作库：三个有摄像头纠正的动作 + 十九个跟着做的动作 ----------
+// ---------- 动作库：三个有摄像头纠正的动作 + 八个跟着口令做的动作 ----------
 const CAM_INFO = {
   bridge: { tags: ['臀腿', '核心'], intro: '仰卧屈膝，把髋抬起来，让肩、髋、膝成一条直线。', good: ['练臀部和大腿后侧', '学会一节一节卷动脊柱', '摄像头会数次数、纠正动作'] },
   kneefold: { tags: ['核心'], intro: '仰卧屈膝，双腿抬到大腿竖直、小腿放平，腰一直贴着垫子。', good: ['练下腹和核心的稳定', '学会抬腿时不拱腰', '摄像头会数次数、纠正动作'] },
   heelslide: { tags: ['核心', '臀腿'], intro: '仰卧屈膝，脚跟贴着垫子慢慢滑出去，把腿伸直再收回。', good: ['腿动的时候练骨盆不动', '对腰很友好的核心入门动作', '摄像头会数次数、纠正动作'] },
 };
+/** 跟着口令做的动作，也包成和 EXERCISES 里一样的样子，讲解页、跟练页就能走同一套流程。free = 摄像头不判定这个动作 */
+const freeEx = (m) => {
+  const [first, up, hold, down] = m.steps;
+  return {
+    id: m.id, name: m.name, free: true, move: m, muscles: m.tags, steps: m.steps, sides: m.sides,
+    pos: first[1], cue: `${up[1]}。${hold[1]}`,
+    seg: { up: `呼气，${up[0]}`, hold: '停住，吸气', down: `呼气，${down[0]}`, rest: '吸气，准备' },
+    say: { up: `呼气，${up[0]}。`, hold: '停住，吸气。', almost: '停住，吸气。', down: `呼气，慢慢${down[0]}。` },
+    meter: '动作节拍', hot: m.hot, tuck: m.hot.waist ? 0.6 : 0, cam: m.view,
+  };
+};
 const LIB = [
-  ...EXERCISES.map((ex) => ({ id: ex.id, name: ex.name, cam: true, ex, ...CAM_INFO[ex.id], how: ex.steps.map(([w, t]) => `${w}：${t}`), easy: '' })),
-  ...MOVES,
+  ...EXERCISES.map((ex) => ({ id: ex.id, name: ex.name, cam: true, ex, reps: 5, ...CAM_INFO[ex.id], how: ex.steps.map(([w, t]) => `${w}：${t}`), easy: '' })),
+  ...MOVES.map((m) => ({ ...m, ex: freeEx(m) })),
 ];
 const libById = (id) => LIB.find((m) => m.id === id);
 const TAGS = ['核心', '侧腰', '臀腿', '肩臂', '背部', '拉伸'];
-/** 计划里的一项要多少秒。n = 有摄像头的动作是次数，其余是秒数 */
-const itemSec = (it) => (libById(it.id)?.cam ? it.n * REP_SEC : it.n);
-const itemText = (it) => (libById(it.id)?.cam ? `${it.n} 次` : `${it.n} 秒`);
+const PREP_SEC = 18;   // 每个动作开始前，念名字、起始姿势和要领，大约要这么久
+/** 计划里的一项要多少秒。n = 做几次 */
+const itemSec = (it) => it.n * REP_SEC + PREP_SEC;
+const itemText = (it) => `${it.n} 次`;
+const planOf = (list) => list.map(([id, n]) => ({ id, n }));
 const DEFAULT_PLANS = [
-  { id: 'd15', fixed: true, name: '15 分钟全身普拉提', note: '同学整理 · 进阶 · 跟着做', items: MOVES.map((m) => ({ id: m.id, n: m.secs })) },
-  { id: 'dcam', fixed: true, name: '仰卧基础三式', note: '入门 · 摄像头纠正', items: EXERCISES.map((e) => ({ id: e.id, n: 5 })) },
+  { id: 'd15', fixed: true, name: '15 分钟全身普拉提', items: planOf([['tablechild', 5], ['thread', 6], ['birddog', 6], ['bridge', 6], ['leanhold', 5], ['diagcrunch', 6], ['sideclam', 6], ['sideleg', 6], ['sitside', 4]]) },
+  { id: 'dside', fixed: true, name: '6 分钟侧腰臀腿', items: planOf([['bridge', 6], ['sideclam', 6], ['sideleg', 6], ['sitside', 4]]) },
+  { id: 'dcam', fixed: true, name: '仰卧基础三式', items: planOf(EXERCISES.map((e) => [e.id, 5])) },
 ];
 const Plans = {
   mine: Store.get('pilates.plans', []),          // 自己建的计划：[{ id, name, items: [{ id 动作, n 次数或秒数 }] }]
@@ -1259,10 +1317,12 @@ const Plans = {
   mins(p) { return Math.max(1, Math.round(this.items(p).reduce((n, it) => n + itemSec(it), 0) / 60)); },
   meta(p) { const n = this.items(p).length; return n ? `约 ${this.mins(p)} 分钟 · ${n} 个动作` : '还没有动作'; },
 };
+// 以前的版本里，没有摄像头纠正的动作是按秒数存的；现在都按次数
+for (const p of Plans.mine) for (const it of p.items) if (it.n > 15) it.n = libById(it.id)?.reps ?? 5;
 const tagHtml = (tags, lead) => (lead ? `<span>${lead}</span>` : '') + tags.map((t) => `<b>${t}</b>`).join('');
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-/** 动作详情、跟做页里的 3D 示范：每块画布一个小人 */
+/** 动作详情里的 3D 示范：每块画布一个小人 */
 const MoveView = {
   views: {},
   async show(cvId, move) {
@@ -1273,26 +1333,20 @@ const MoveView = {
       if (!o) {
         const v = new m.Viewer(cv);
         v.figure('std');
-        o = this.views[cvId] = { v, move: null };
-        const io = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+        o = this.views[cvId] = { v, ex: null };
         v.onTick = (now) => {
-          const mv = o.move;
-          if (!mv) return;
-          if (mv.cam) {
-            const c = (now / 1000) % 8.6;
-            const p = REDUCED ? 1 : c < 2.4 ? io(c / 2.4) : c < 4.4 ? 1 : c < 7 ? 1 - io((c - 4.4) / 2.6) : 0;
-            v.pose('std', stdJoints(p, mv.ex), p, false, mv.ex.hot, p * mv.ex.tuck);
-          } else v.pose('std', moveJoints(mv, o.paused ? o.at : now / 1000, REDUCED), 0.7, false, mv.hot, mv.hot.waist ? 0.6 : 0);
-          o.at = o.paused ? o.at : now / 1000;
+          const ex = o.ex;
+          if (!ex) return;
+          const { p, rep, eff } = demoCycle(now);
+          v.pose('std', exJoints(ex, p, rep), p, eff, ex.hot, p * ex.tuck);
         };
         v.start();
       }
-      o.move = move; o.paused = false;
-      o.v.frame(move.cam ? move.ex.cam : move.view);
+      o.ex = move.ex;
+      o.v.frame(move.ex.cam);
       cv.parentElement.hidden = false;
     } catch (e) { debugNote('3D 示范', e); cv.parentElement.hidden = true; }
   },
-  pause(cvId, on) { if (this.views[cvId]) this.views[cvId].paused = on; },
 };
 
 /** 动作详情：动画、介绍、练哪里、怎么做 */
@@ -1303,7 +1357,7 @@ const MoveSheet = {
     if (!m) return;
     $('moveName').textContent = m.name;
     $('moveTags').innerHTML = tagHtml(m.tags, '练到');
-    $('moveKind').textContent = m.cam ? '摄像头会数次数、纠正动作' : '跟着小人和倒计时做，没有摄像头纠正';
+    $('moveKind').textContent = m.cam ? '摄像头会数次数、纠正动作' : '跟着口令和小人做，摄像头不纠正这个动作';
     $('moveIntro').textContent = m.intro;
     $('moveGood').innerHTML = m.good.map((t) => `<li>${t}</li>`).join('');
     $('moveHow').innerHTML = m.how.map((t) => `<li>${t}</li>`).join('');
@@ -1347,11 +1401,11 @@ const PlanUI = {
     $('planItems').innerHTML = items.map((it, i) => {
       const m = libById(it.id);
       if (!m) return '';
-      const [lo, hi, unit] = m.cam ? [3, 15, '次'] : [20, 120, '秒'];
+      const [lo, hi, unit] = [3, 15, '次'];
       const amount = fixed ? `<span class="amt">${itemText(it)}</span>`
         : `<span class="stepper"><button data-i="${i}" data-step="-1" aria-label="${m.name}减少"${it.n <= lo ? ' disabled' : ''}>−</button><output>${it.n}<small>${unit}</small></output><button data-i="${i}" data-step="1" aria-label="${m.name}增加"${it.n >= hi ? ' disabled' : ''}>+</button></span>
         <button class="del" data-del="${i}" aria-label="去掉${m.name}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>`;
-      return `<div class="pitem"><button class="nm" data-info="${m.id}"><b><i class="no">${i + 1}</i>${m.name}</b><small>${m.tags.join(' · ')}${m.sides ? ' · 左右各一半' : ''}</small></button>${amount}</div>`;
+      return `<div class="pitem"><button class="nm" data-info="${m.id}"><b><i class="no">${i + 1}</i>${m.name}</b><small>${m.tags.join(' · ')}${m.sides === 'half' ? ' · 左右各一半' : ''}</small></button>${amount}</div>`;
     }).join('') || '<p class="empty">还没有动作。从下面的动作库里加进来。</p>';
     $('planTotal').textContent = items.length ? `约 ${Plans.mins(p)} 分钟` : '–';
     $('libCard').hidden = fixed;
@@ -1370,7 +1424,7 @@ const PlanUI = {
   add(id) {
     const p = this.cur, m = libById(id);
     if (!m || p.fixed || p.items.length >= 30) return;
-    p.items.push({ id, n: m.cam ? 5 : m.secs });
+    p.items.push({ id, n: m.reps });
     this.commit(); this.renderEdit();
   },
   back() {
@@ -1388,112 +1442,65 @@ const PlanUI = {
     if (x.info) return MoveSheet.open(x.info, !p.fixed);
     if (x.filter != null) { this.filter = x.filter; return this.renderEdit(); }
     if (x.add) return this.add(x.add);
-    if (x.step) { const it = p.items[x.i], cam = libById(it.id).cam; it.n = cam ? clamp(it.n + Number(x.step), 3, 15) : clamp(it.n + 10 * Number(x.step), 20, 120); }
+    if (x.step) { const it = p.items[x.i]; it.n = clamp(it.n + Number(x.step), 3, 15); }
     else if (x.del != null) p.items.splice(Number(x.del), 1);
     else return;
     this.commit(); this.renderEdit();
   },
 };
 
-/** 按计划一个接一个练 */
+/** 按计划练：先在讲解页左右滑着把每个动作看一遍，点开始后在跟练画面里一个接一个做 */
 const Run = {
-  plan: null, i: -1,
+  plan: null, i: 0, view: 0,
   start(p) {
     if (!p || !Plans.items(p).length) return;
     this.plan = { name: p.name || '未命名计划', items: Plans.items(p) };
-    this.i = -1;
+    this.i = 0;
     Plans.last = p.id; Store.set('pilates.lastPlan', p.id);
-    Voice.unlock();
-    this.next();
+    this.look(0, 0);
   },
-  peek() { return this.plan?.items[this.i + 1]; },
-  next() {
-    if (!this.plan) return;
-    const it = this.plan.items[++this.i];
-    if (!it) return this.done();
-    const m = libById(it.id);
-    if (m.cam) {
-      Follow.stop();
-      App.pick(EXERCISES.indexOf(m.ex), 1);
-      TARGET_REPS = it.n;
-      App.intro();
-    } else Follow.start(m, it.n);
+  /** 讲解页翻到计划里的第 k 个动作。dir = 1 往后翻，-1 往前翻 */
+  look(k, dir) {
+    const items = this.plan?.items;
+    if (!items || k < 0 || k >= items.length) return;
+    this.view = k;
+    EX = libById(items[k].id).ex; TARGET_REPS = items[k].n;
+    App.intro(dir);
   },
-  done() {
-    this.plan = null;
-    App.home();
-    Voice.say('计划完成，辛苦了。', 2);
-    App.tab('me');
-  },
-  stop() { this.plan = null; this.i = -1; },
+  stop() { this.plan = null; this.i = 0; this.view = 0; },
 };
 
-/** 跟着做：3D 小人示范 + 倒计时 + 念要领。没有摄像头 */
-const Follow = {
-  timer: 0, move: null, wake: null,
-  async start(m, secs) {
-    this.stop();
-    Object.assign(this, { move: m, total: secs, left: secs, prep: 5, paused: false, half: false, cueI: 0 });
-    App.phase = 'follow';
-    $('followProg').textContent = Run.plan ? `${Run.plan.name} · ${Run.i + 1} / ${Run.plan.items.length}` : '';
-    $('followName').textContent = m.name;
-    $('followTags').innerHTML = tagHtml(m.tags, '练到');
-    $('followHow').innerHTML = m.how.map((t) => `<li>${t}</li>`).join('');
-    const nx = Run.peek();
-    $('followNext').textContent = nx ? `下一个：${libById(nx.id).name}` : '这是最后一个动作';
-    $('btnFollowPause').textContent = '暂停';
-    this.paint();
-    App.show('follow');
-    $('follow').scrollTop = 0;
-    MoveView.show('follow3d', m);
-    Voice.say(`${m.name}。${m.intro}`, 2);
-    this.last = performance.now();
-    this.timer = setInterval(() => this.tick(), 200);
-    try { this.wake = await navigator.wakeLock?.request('screen'); } catch { /* 没有也不影响 */ }
+/** 按计划练时，跟练画面上的示范小人：换动作时铺满屏幕，开始做了就缩到角上，跟着口令的节拍动 */
+const Card = {
+  viewer: null,
+  async show(big) {
+    const el = $('moveCard');
+    el.hidden = false;
+    el.classList.toggle('mini', !big);
+    $('stageTitle').style.visibility = big ? 'hidden' : '';   // 铺满时卡片上已经写了第几个、什么动作
+    try {
+      const m = await get3D();
+      if (!this.viewer) {
+        const v = this.viewer = new m.Viewer($('card3d'));
+        v.figure('std');
+        v.auto = false; v.yaw = 0.3;
+        v.onTick = (now) => {
+          const co = App.phase === 'work' ? App.coach : null;
+          let p, rep, eff;
+          if (co && !co.done && co.t0 != null) {
+            const sec = (now - co.segStart) / 1000;
+            p = stdLift(co.seg, sec); rep = Math.max(0, co.rep - 1);
+            eff = co.seg === 'hold' || (co.seg === 'up' && sec >= 1) || (co.seg === 'down' && sec < 1);
+          } else ({ p, rep, eff } = demoCycle(now));
+          v.pose('std', exJoints(EX, p, rep), p, eff, EX.hot, p * EX.tuck);
+        };
+        v.start();
+      }
+      const c = EX.cam;
+      this.viewer.frame({ ...c, y: (c.y ?? 0.22) + 0.1, dist: (c.dist ?? 2.55) * 0.9 });   // 镜头拉近一点，小人尽量大
+    } catch (e) { debugNote('3D 示范', e); }
   },
-  tick() {
-    const now = performance.now(), dt = Math.min(1, (now - this.last) / 1000), m = this.move;
-    this.last = now;
-    if (this.paused || !m) return;
-    if (this.prep > 0) {
-      this.prep -= dt;
-      if (this.prep <= 0) Voice.say('开始。' + m.how[0], 2);
-    } else {
-      this.left -= dt;
-      const did = this.total - this.left;
-      if (m.sides && !this.half && this.left <= this.total / 2) { this.half = true; Voice.say('换另一边。', 2); }
-      // 每隔十秒左右念下一条要领
-      const ci = Math.floor(did / 10) % m.how.length;
-      if (ci !== this.cueI) { this.cueI = ci; Voice.say(m.how[ci], 0); }
-      if (this.left <= 0) return this.finish();
-    }
-    this.paint();
-  },
-  paint() {
-    const prep = this.prep > 0;
-    $('followSec').textContent = Math.max(0, Math.ceil(prep ? this.prep : this.left));
-    $('followState').textContent = this.paused ? '已暂停' : prep ? '准备' : this.move.sides ? (this.half ? '另一边 · 秒' : '这一边 · 秒') : '秒';
-    $('followBar').style.transform = `scaleX(${prep ? 0 : clamp(1 - this.left / this.total, 0, 1)})`;
-    [...$('followHow').children].forEach((li, i) => li.classList.toggle('on', !prep && i === this.cueI));
-  },
-  pause() {
-    this.paused = !this.paused;
-    $('btnFollowPause').textContent = this.paused ? '继续' : '暂停';
-    MoveView.pause('follow3d', this.paused);
-    if (this.paused) Voice.stop();
-    this.paint();
-  },
-  /** 这个动作结束（做完或者跳过）：做够 10 秒就记一条，然后下一个 */
-  finish() {
-    const m = this.move, did = Math.round(this.total - this.left);
-    this.stop();
-    if (m && did >= 10) Log.add({ at: Date.now(), ex: m.id, kind: 'f', secs: did, full: did >= this.total - 1, ...(Run.plan ? { plan: Run.plan.name } : {}) });
-    if (Run.plan) Run.next(); else App.home();
-  },
-  stop() {
-    clearInterval(this.timer); this.timer = 0; this.move = null;
-    this.wake?.release?.(); this.wake = null;
-  },
+  hide() { $('moveCard').hidden = true; $('stageTitle').style.visibility = ''; },
 };
 const MeUI = {
   render() {
@@ -1512,7 +1519,7 @@ const MeUI = {
     $('meLog').innerHTML = list.slice(0, 30).map((r) => {
       const ex = exById(r.ex), t = new Date(r.at), mv = libById(r.ex);
       const when = `${t.getMonth() + 1}月${t.getDate()}日 ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
-      if (r.kind === 'f') return `<div class="logitem"><b>${mv?.name ?? r.ex}<small>${when}</small></b><span class="sc full">${r.secs}<small>秒 · 跟做</small></span>${r.plan ? `<p>${esc(r.plan)}${r.full ? '' : ' · 没做完就跳过了'}</p>` : ''}</div>`;
+      if (r.kind === 'f') return `<div class="logitem"><b>${mv?.name ?? r.ex}<small>${when}</small></b><span class="sc full">${r.n ?? r.secs}<small>${r.n != null ? '次' : '秒'} · 跟做</small></span>${r.plan ? `<p>${esc(r.plan)}${r.full ? '' : ' · 没做完'}</p>` : ''}</div>`;
       const note = r.top && ex?.names[r.top] ? `最常出现：${ex.names[r.top]}` : r.good >= r.attempts ? '全部标准' : '';
       return `<div class="logitem"><b>${ex?.name ?? r.ex}<small>${when}</small></b><span class="sc${r.good >= r.attempts ? ' full' : ''}">${r.good} / ${r.attempts}<small>次标准</small></span>
         <span class="dots">${(r.reps || []).map((ok) => `<i${ok ? '' : ' class="bad"'}></i>`).join('')}</span>${note || r.plan ? `<p>${[note, r.plan && esc(r.plan)].filter(Boolean).join(' · ')}</p>` : ''}</div>`;
@@ -1551,10 +1558,11 @@ const App = {
   lostSince: null,
   wake: null,
   exIndex: 0,
+  prepId: 0,
 
   /** 切换页面。from = 触发切换的按钮：进入跟练时，深色画面从这个按钮的位置展开 */
   show(id, from) {
-    const all = ['home', 'intro', 'stageScreen', 'summary', 'plan', 'me', 'planEdit', 'follow'].map($);
+    const all = ['home', 'intro', 'stageScreen', 'summary', 'plan', 'me', 'planEdit'].map($);
     // 底部三个按钮只在首页、计划、我的这三页出现；当前这一页的按钮变大变亮
     $('tabs').hidden = !['home', 'plan', 'me'].includes(id);
     $('tabs').classList.toggle('over', id !== 'home');
@@ -1607,9 +1615,18 @@ const App = {
   },
 
   /** 开始前的动作讲解：放示范动画，念一遍要领 */
-  intro() {
+  intro(dir = 0) {
     Voice.unlock();
     this.phase = 'intro';
+    // 按计划练：可以左右翻着把每个动作都看一遍
+    const pl = Run.plan;
+    $('introPager').hidden = !pl;
+    if (pl) {
+      $('introPage').textContent = `${Run.view + 1} / ${pl.items.length} · ${TARGET_REPS} 次`;
+      $('btnIntroPrev').disabled = Run.view === 0;
+      $('btnIntroNext').disabled = Run.view === pl.items.length - 1;
+      if (dir) for (const el of [$('introName'), $('introSteps')]) { el.classList.remove('swap-next', 'swap-prev'); replay(el, dir > 0 ? 'swap-next' : 'swap-prev'); }
+    }
     // 讲解页的内容跟着选中的动作换
     $('introName').textContent = EX.name;
     $('introMuscles').innerHTML = '<span>练到</span>' + EX.muscles.map((m) => `<b>${m}</b>`).join('');
@@ -1644,7 +1661,8 @@ const App = {
     $('repAll').textContent = ' / ' + TARGET_REPS;
     this.source?.stop();
     this.source = mode === 'demo' ? new DemoSource() : new CameraSource(this.facing);
-    this.guide = new SetupGuide((rest) => this.beginWorkout(rest));
+    this.guide = new SetupGuide((rest) => this.beginWorkout(rest), !!Run.plan);
+    Card.hide();
     this.coach = null;
     try {
       const resize = (w, h) => {
@@ -1653,12 +1671,12 @@ const App = {
         const cv = $('overlay'); cv.width = w; cv.height = h;
         this.fitView();
         // 摆放阶段转了手机：录像按新的方向重新开始，免得横画面缩在竖视频中间
-        if (turned && this.phase === 'setup') Rec.start(w, h);
+        if (turned && this.phase === 'setup' && !Run.plan) Rec.start(w, h);
       };
       const info = await this.source.start((lms, t, world) => this.onFrame(lms, t, world), (lms) => this.draw(lms), resize);
       $('view').classList.toggle('mirror', info.mirror);
       resize(info.w, info.h);
-      Rec.start(info.w, info.h);
+      if (!Run.plan) Rec.start(info.w, info.h);   // 按计划练一次十几分钟，录像太大，不录
       $('loading').hidden = true;
       this.phase = 'setup';
       try { this.wake = await navigator.wakeLock?.request('screen'); } catch { /* 没有也不影响 */ }
@@ -1694,9 +1712,18 @@ const App = {
     this.body = b;
 
     if (this.phase === 'setup') return this.guide.update(b, t);
+    if (this.phase === 'prep') {
+      // 念要领的这段时间里，顺便量一下躺好时的角度，给后面的判定当起点
+      if (!EX.free && b?.all && b.torsoTilt < 35 && b.kneeAngle > 40 && b.kneeAngle < 140 && b.hipAngle <= 152) {
+        const v = EX.value(b);
+        if (v != null) { this.restS.push(v); if (this.restS.length > 20) this.restS.shift(); }
+      }
+      return;
+    }
     if (this.phase !== 'work') return;
 
-    if (!b?.core) {
+    if (EX.free) this.lostSince = null;      // 不判定的动作：看不到人也不用提醒
+    else if (!b?.core) {
       // 跟练中看不到人：先暂停判定，超过 1.5 秒提醒
       if (this.lostSince == null) this.lostSince = t;
       if (t - this.lostSince > 1500) { this.lostSince = t + 6000; toast('看不到你了，回到画面里', 'info', 3000); Voice.say('看不到你了，回到画面里。', 0); }
@@ -1704,7 +1731,7 @@ const App = {
     const c = this.coach;
     c.update(b?.core ? b : null, t);
     // 记下这一刻的 3D 姿势，练完后用来和标准动作对比
-    let J = this.mode === 'demo' ? stdJoints(this.source.liftAt(t)) : world && b?.core ? userJoints(world) : null;
+    let J = Run.plan ? null : this.mode === 'demo' ? stdJoints(this.source.liftAt(t)) : world && b?.core ? userJoints(world) : null;
     if (J && c.rep && !c.done) {
       if (this.trackJ) J = lerpJ(this.trackJ, J, 0.5);   // 轻轻平滑一下，减少抖动
       this.trackJ = J;
@@ -1717,6 +1744,12 @@ const App = {
 
   beginWorkout(rest) {
     if (this.phase !== 'setup') return;
+    if (Run.plan) {
+      $('setupPanel').hidden = true; $('hud').hidden = false;
+      replay($('hud'), 'enter-hud');
+      Who.lock();
+      return this.prepMove(true);
+    }
     this.phase = 'countdown';
     $('setupPanel').hidden = true; $('hud').hidden = false;
     replay($('hud'), 'enter-hud');
@@ -1736,8 +1769,74 @@ const App = {
     }, 4600);
   },
 
+  /** 按计划练：轮到第 Run.i 个动作。先把示范铺满屏幕，念“第几个、什么动作、起始姿势、要领”，念完再开始喊节拍 */
+  prepMove(first) {
+    const pl = Run.plan, it = pl.items[Run.i], N = pl.items.length;
+    EX = libById(it.id).ex; TARGET_REPS = it.n;
+    this.phase = 'prep';
+    this.coach = null; this.restS = []; this.track = []; this.trackJ = null; this.lostSince = null;
+    const id = ++this.prepId;
+    $('stageTitle').textContent = `${Run.i + 1} / ${N} · ${EX.name}`;
+    $('repNow').textContent = '0';
+    $('repAll').textContent = ' / ' + TARGET_REPS;
+    $('meterLabel').textContent = EX.meter;
+    $('phaseText').textContent = '准备';
+    document.querySelector('#meter i').style.transform = 'scaleX(0)';
+    $('meter').classList.remove('good');
+    $('cardNo').textContent = `第 ${Run.i + 1} 个 / 共 ${N} 个 · ${TARGET_REPS} 次`;
+    $('cardName').textContent = EX.name;
+    $('cardCue').textContent = EX.pos;
+    Card.show(true);
+    const no = N > 1 && Run.i === N - 1 ? '最后一个' : `第${cn(Run.i + 1)}个`;
+    speakThen(`${first ? '准备好了。' : ''}${no}，${EX.name}。${EX.pos}。${EX.cue}。准备。`, () => {
+      if (id !== this.prepId || this.phase !== 'prep') return;
+      const n = this.restS.length;
+      this.coach = new Coach(EX, n ? this.restS.reduce((a, c) => a + c, 0) / n : null, () => this.moveDone());
+      Card.show(false);
+      this.phase = 'work';
+    }, 5000);
+  },
+
+  /** 把刚做的这个动作记到“我的”里。full = 是不是做完了 */
+  logMove(full) {
+    const c = this.coach;
+    if (!c || !c.reps.length || this.mode !== 'camera') return null;
+    const s = c.summary(performance.now()), plan = Run.plan ? { plan: Run.plan.name } : {};
+    if (EX.free) Log.add({ at: Date.now(), ex: EX.id, kind: 'f', n: s.attempts, full, ...plan });
+    else Log.add({
+      at: Date.now(), ex: EX.id, good: s.good, attempts: s.attempts, target: TARGET_REPS, seconds: Math.round(s.seconds),
+      avgPeak: Math.round(s.avgPeak || 0), top: s.topIssue?.[0] ?? null, reps: s.reps.map((r) => (r.ok ? 1 : 0)), ...plan,
+    });
+    return s;
+  },
+
+  /** 按计划练：一个动作做完了。说一句结束语，歇几秒，再轮到下一个 */
+  moveDone() {
+    const s = this.logMove(true), name = EX.name, last = Run.i >= Run.plan.items.length - 1;
+    this.phase = 'between';
+    const id = ++this.prepId;
+    toast(`${name} 完成`, 'good', 2400);
+    $('phaseText').textContent = '完成';
+    const score = s && !EX.free ? `${s.attempts} 次里有 ${s.good} 次标准。` : '';
+    speakThen(`OK，${name}完成。${score}${last ? '' : '休息一下。'}`, () => {
+      if (id !== this.prepId || !Run.plan) return;
+      if (last) return this.planEnd(true);
+      Run.i++;
+      this.prepMove(false);
+    }, last ? 1500 : 4500);
+  },
+
+  /** 按计划练结束（done = 全部做完；否则是中途点了结束）：回到“我的”，看记录 */
+  planEnd(done) {
+    if (!done) this.logMove(false);
+    this.home();
+    if (done) Voice.say('计划完成，辛苦了。', 2);
+    this.tab('me');
+  },
+
   finish() {
     if (this.phase === 'done') return;
+    if (Run.plan) return this.planEnd(false);
     const s = this.coach ? this.coach.summary(performance.now()) : null;
     this.lastRun = s && {
       at: new Date().toISOString(), mode: this.mode, facing: this.facing, video: this.size,
@@ -1747,15 +1846,7 @@ const App = {
       ua: navigator.userAgent,
     };
     $('btnCopy').textContent = '复制本次数据';
-    if (s && s.attempts && this.mode === 'camera') {
-      Log.add({
-        at: Date.now(), ex: EX.id, good: s.good, attempts: s.attempts, target: TARGET_REPS, seconds: Math.round(s.seconds),
-        avgPeak: Math.round(s.avgPeak || 0), top: s.topIssue?.[0] ?? null, reps: s.reps.map((r) => (r.ok ? 1 : 0)),
-        ...(Run.plan ? { plan: Run.plan.name } : {}),
-      });
-    }
-    const nx = Run.peek();
-    $('btnAgain').textContent = nx ? `继续计划：${libById(nx.id).name}` : Run.plan ? '完成计划' : '再练一组';
+    this.logMove(true);
     this.phase = 'done';
     setTimeout(async () => {
       const video = await Rec.stop();
@@ -1851,7 +1942,7 @@ const App = {
     }
     $('sumTitle').textContent = title;
     $('sumNote').innerHTML = note;
-    Voice.say(s.attempts ? `完成。${s.attempts} 次里有 ${s.good} 次标准。` : '这次先到这里。', 2);
+    Voice.say(s.attempts ? `OK，完成。${s.attempts} 次里有 ${s.good} 次标准。` : '这次先到这里。', 2);
   },
 
   home() {
@@ -1860,7 +1951,10 @@ const App = {
     this.source?.stop(); this.source = null;
     this.wake?.release?.(); this.wake = null;
     this.phase = 'home';
-    Run.stop(); Follow.stop(); TARGET_REPS = 10;
+    this.prepId++;                      // 还在等“念完再继续”的那一步作废
+    Card.hide();
+    Run.stop(); TARGET_REPS = 10;
+    EX = EXERCISES[this.exIndex];       // 计划里可能换成了别的动作，首页还是显示原来选中的那个
     this.renderToday();
     document.querySelector('#loading .spinner').hidden = false;
     this.show('home');
@@ -1882,7 +1976,7 @@ $('btnTheme').onclick = () => {
   try { localStorage.setItem('homeTheme', darkHome ? 'dark' : 'light'); } catch { /* 忽略 */ }
 };
 
-$('btnStart').onclick = () => { Run.stop(); TARGET_REPS = 10; App.intro(); };
+$('btnStart').onclick = () => { Run.stop(); TARGET_REPS = 10; EX = EXERCISES[App.exIndex]; App.intro(); };
 $('todayPlan').onclick = () => Run.start(App.homePlan);
 document.querySelectorAll('#tabs .tab').forEach((el) => { el.onclick = () => App.tab(el.dataset.tab); });
 // 计划列表：点“开始”直接练，点卡片其余地方进去看和改
@@ -1911,9 +2005,6 @@ $('btnPlanDel').onclick = () => {
 $('btnMoveClose').onclick = () => MoveSheet.close();
 $('moveSheet').addEventListener('click', (e) => { if (e.target === $('moveSheet')) MoveSheet.close(); });
 $('btnMoveAdd').onclick = () => { PlanUI.add(MoveSheet.move.id); MoveSheet.close(); };
-$('btnFollowBack').onclick = () => { Voice.stop(); App.home(); };
-$('btnFollowPause').onclick = () => Follow.pause();
-$('btnFollowNext').onclick = () => { Voice.stop(); Follow.finish(); };
 // 清空记录：点两次才真的清，免得误触
 $('btnClearLog').onclick = () => {
   if ($('btnClearLog').textContent === '清空记录') { $('btnClearLog').textContent = '再点一次，确认清空'; return; }
@@ -1937,7 +2028,22 @@ $('btnNext').onclick = () => App.pick(App.exIndex + 1, 1);
 }
 $('btnIntroBack').onclick = () => { IntroTalk.stop(); App.home(); };
 $('btnReplay').onclick = () => IntroTalk.play();
-$('btnIntroGo').onclick = () => { IntroTalk.stop(); App.start('camera', $('btnIntroGo')); };
+$('btnIntroGo').onclick = () => { IntroTalk.stop(); Run.i = 0; App.start('camera', $('btnIntroGo')); };
+$('btnIntroPrev').onclick = () => Run.look(Run.view - 1, -1);
+$('btnIntroNext').onclick = () => Run.look(Run.view + 1, 1);
+// 按计划练时，在讲解页左右滑：往左滑看下一个动作，往右滑回上一个（和首页换动作的方向一样）
+{
+  let sx = 0, sy = 0, on = false;
+  const el = $('intro');
+  el.addEventListener('pointerdown', (e) => { on = !!Run.plan && !e.target.closest('button'); sx = e.clientX; sy = e.clientY; });
+  el.addEventListener('pointerup', (e) => {
+    if (!on) return;
+    on = false;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.4) Run.look(Run.view + (dx < 0 ? 1 : -1), dx < 0 ? 1 : -1);
+  });
+  el.addEventListener('pointercancel', () => { on = false; });
+}
 $('btnSaveRec').onclick = async () => {
   const blob = App.recBlob;
   if (!blob) return;
@@ -1967,7 +2073,7 @@ $('btnCopy').onclick = async () => {
 $('btnDemo').onclick = () => App.start('demo', $('btnDemo'));
 $('btnBack').onclick = () => App.home();
 $('btnHome').onclick = () => App.home();
-$('btnAgain').onclick = () => (Run.plan ? Run.next() : App.start(App.mode));
+$('btnAgain').onclick = () => App.start(App.mode);
 $('btnEnd').onclick = () => App.finish();
 $('btnForce').onclick = () => App.beginWorkout(null);
 $('btnFlip').onclick = () => { App.facing = App.facing === 'user' ? 'environment' : 'user'; App.start('camera'); };
@@ -1981,7 +2087,7 @@ window.__app = App;
 setTimeout(() => Intro3D.set('3d'), 250);
 // 识别模型比较大，排在 3D 后面再开始下载
 if (!new URLSearchParams(location.search).has('demo')) setTimeout(() => loadModel().catch(() => {}), 2000); // 方便调试
-window.__test = { MOVES, moveJoints, LIB, Plans, PlanUI, Run, Follow, MoveSheet, MoveView, stdJoints, Cmp, Coach, SetupGuide, DemoSource, demoPose, readBody, EXERCISES, pick: (i) => App.pick(i, 1) };
+window.__test = { TEMPO, MOVES, movePose, LIB, Plans, PlanUI, Run, Card, MoveSheet, MoveView, Voice, stdJoints, Cmp, Coach, SetupGuide, DemoSource, demoPose, readBody, EXERCISES, pick: (i) => App.pick(i, 1) };
 if (new URLSearchParams(location.search).has('demo')) App.start('demo');
 
 // 把页面文件存在本机（见 sw.js）：第二次打开不用再下载

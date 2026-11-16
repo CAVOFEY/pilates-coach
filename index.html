@@ -8,7 +8,7 @@
 /* 中文字体：OPPO Sans 4.0（可变字重 100–700），已裁剪到只含页面用到的字。改了文字后运行 tools/subset_font.py */
 @font-face {
   font-family: "OPPO Sans";
-  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=40") format("woff2");
+  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=41") format("woff2");
   font-weight: 100 700;
   font-display: swap;
 }
@@ -129,6 +129,31 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 }
 .part.ok { background: var(--teal-500); color: #fff; }
 .part.miss { background: var(--pink-500); color: #fff; }
+
+/* 按计划练：示范小人。换动作时铺满屏幕，开始做了缩到右上角 */
+#moveCard { position: absolute; inset: 0; z-index: 2; overflow: hidden; background: linear-gradient(180deg, #edfaf7, #fde4ee); }
+#moveCard canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+#moveCard .cardtext {
+  position: absolute; left: 0; right: 0; top: calc(max(14px, env(safe-area-inset-top)) + 52px); padding: 0 18px;
+  display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; pointer-events: none; color: #3d2f3a;
+}
+#moveCard small { font-size: 13px; letter-spacing: .08em; opacity: .7; }
+#moveCard b { font-size: 30px; letter-spacing: .1em; }
+#moveCard span { font-size: 15px; opacity: .8; }
+#moveCard.mini {
+  inset: auto; right: 12px; top: calc(max(14px, env(safe-area-inset-top)) + 52px);
+  width: min(40%, 260px); aspect-ratio: 16 / 10; border-radius: 16px; box-shadow: 0 6px 20px rgba(0, 0, 0, .3);
+}
+#moveCard.mini .cardtext { display: none; }
+@media (orientation: landscape) and (max-height: 520px) {
+  #moveCard .cardtext { top: max(8px, env(safe-area-inset-top)); padding: 0 150px; gap: 0; }
+  #moveCard b { font-size: 24px; }
+  #moveCard.mini { top: calc(max(14px, env(safe-area-inset-top)) + 50px); width: min(30%, 240px); }
+}
+.pager { display: flex; align-items: center; justify-content: center; gap: 16px; flex: none; font-size: 14px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.pager button { width: 38px; height: 38px; border-radius: 50%; background: #fff; color: var(--pink-600); display: grid; place-items: center; }
+.pager button:disabled { opacity: .35; }
+.pager svg { width: 20px; height: 20px; }
 
 /* 跟练 HUD */
 #hud { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
@@ -303,9 +328,9 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 .addplan { flex: none; min-height: 52px; border-radius: var(--r-md); border: 1.5px dashed var(--teal-300); background: var(--teal-50); color: var(--teal-700); font-size: 15px; font-weight: 600; }
 .sech { flex: none; margin: 8px 0 -6px; font-size: 13px; font-weight: 500; letter-spacing: .14em; color: var(--ink-soft); }
 /* 一个计划 */
-#planEdit, #follow { overflow-y: auto; padding: max(18px, env(safe-area-inset-top)) 22px calc(22px + env(safe-area-inset-bottom)); gap: 16px; background: var(--pink-50); }
-#planEdit > *, #follow > * { flex: none; }
-#planEdit .btn-link, #follow .btn-link { color: var(--ink-soft); padding: 0 6px; }
+#planEdit { overflow-y: auto; padding: max(18px, env(safe-area-inset-top)) 22px calc(22px + env(safe-area-inset-bottom)); gap: 16px; background: var(--pink-50); }
+#planEdit > * { flex: none; }
+#planEdit .btn-link { color: var(--ink-soft); padding: 0 6px; }
 .pname { width: 100%; min-height: 50px; padding: 0 2px; border: 0; border-bottom: 2px solid var(--pink-200); border-radius: 0; background: none; font: inherit; font-size: 26px; font-weight: 700; color: var(--ink); outline: none; }
 .pname::placeholder { color: #cdbcc8; font-weight: 500; }
 .pname:focus { border-bottom-color: var(--pink-500); }
@@ -329,7 +354,7 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 .sheet > * { flex: none; }
 .sheet .x { position: absolute; z-index: 2; right: 14px; top: 14px; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, .9); color: var(--ink-soft); }
 .sheet .x svg { width: 16px; height: 16px; }
-.sheet .art canvas.c3d, #follow .art canvas.c3d { aspect-ratio: 32 / 21; }
+.sheet .art canvas.c3d { aspect-ratio: 32 / 21; }
 .sheet h2 { font-size: 24px; letter-spacing: .06em; margin: 2px 0 0; }
 .sheet h3 { margin: 6px 0 -4px; font-size: 13px; font-weight: 500; letter-spacing: .14em; color: var(--ink-soft); }
 .sheet .kind { margin: 0; font-size: 12px; color: var(--teal-700); }
@@ -337,17 +362,7 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 .sheet ul, .sheet ol { margin: 0; padding-left: 1.3em; font-size: 14.5px; line-height: 1.7; color: var(--ink); }
 .sheet .easy { margin: 0; padding: 12px 14px; border-radius: 14px; background: var(--teal-50); font-size: 13.5px; line-height: 1.6; color: var(--teal-700); }
 /* 跟着做 */
-#follow h1 { font-size: 26px; letter-spacing: .06em; }
 .prog { font-size: 12px; color: var(--ink-soft); max-width: 62%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.clock { display: flex; align-items: baseline; justify-content: center; gap: 8px; }
-.clock b { font-family: var(--font-num); font-size: 68px; font-weight: 700; line-height: 1; color: var(--pink-500); font-variant-numeric: tabular-nums; }
-.clock small { font-size: 15px; color: var(--ink-soft); }
-.fbar { height: 6px; border-radius: 3px; background: var(--pink-100); overflow: hidden; }
-.fbar i { display: block; height: 100%; background: var(--teal-300); transform: scaleX(0); transform-origin: 0 50%; transition: transform .25s linear; }
-.howlist { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; counter-reset: how; }
-.howlist li { counter-increment: how; padding: 8px 12px; border-radius: 12px; font-size: 14.5px; line-height: 1.5; color: var(--ink-soft); transition: background-color .3s, color .3s; }
-.howlist li::before { content: counter(how) "　"; font-family: var(--font-num); font-weight: 700; }
-.howlist li.on { background: #fff; color: var(--ink); }
 .frow { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; padding-bottom: 6px; }
 .day { position: relative; aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; font-size: 14px; font-weight: 600; background: var(--pink-50); color: var(--ink-soft); }
@@ -622,6 +637,12 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
       <canvas id="intro3d" class="c3d" hidden aria-label="可以拖动旋转的 3D 动作示范"></canvas>
       <span class="hint3d" id="hint3d" hidden>用手指拖动，可以绕着看</span>
     </div>
+    <!-- 按计划练：左右翻着看计划里的每个动作 -->
+    <div class="pager" id="introPager" hidden>
+      <button id="btnIntroPrev" aria-label="上一个动作"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6 8.5 12l6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <span id="introPage"></span>
+      <button id="btnIntroNext" aria-label="下一个动作"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </div>
     <!-- 四拍：和示范小人、教练口令是同一个顺序；语音念到哪一行，哪一行亮起来 -->
     <ol class="steps" id="introSteps">
       <li><b>躺好</b><span>屈膝，双脚踩地，手放两边</span></li>
@@ -639,6 +660,12 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
         <video id="video" playsinline muted></video>
         <canvas id="overlay"></canvas>
       </div>
+    </div>
+
+    <!-- 按计划练：换动作时铺满屏幕的示范；开始做了就缩到右上角 -->
+    <div id="moveCard" hidden>
+      <canvas id="card3d" class="c3d" aria-label="这个动作的 3D 示范"></canvas>
+      <div class="cardtext"><small id="cardNo"></small><b id="cardName"></b><span id="cardCue"></span></div>
     </div>
 
     <div class="top">
@@ -754,25 +781,6 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
   </section>
 
   <!-- 跟着做：没有摄像头的动作 -->
-  <section class="screen" id="follow" hidden>
-    <div class="intro-top">
-      <button class="btn btn-link" id="btnFollowBack">← 结束</button>
-      <span class="prog" id="followProg"></span>
-    </div>
-    <div class="art art3d"><canvas id="follow3d" class="c3d" aria-label="可以拖动旋转的 3D 动作示范"></canvas></div>
-    <h1 id="followName"></h1>
-    <div class="muscles" id="followTags"></div>
-    <div class="clock"><b id="followSec">0</b><small id="followState">准备</small></div>
-    <div class="fbar"><i id="followBar"></i></div>
-    <ol class="howlist" id="followHow"></ol>
-    <p class="hintline" id="followNext" style="text-align:center"></p>
-    <div class="frow">
-      <button class="btn btn-ghost" id="btnFollowPause">暂停</button>
-      <button class="btn btn-ghost" id="btnFollowNext">下一个</button>
-    </div>
-  </section>
-
-  <!-- 我的：这周练了几天、过去每一次的报告 -->
   <section class="screen" id="me" hidden>
     <h1>我的</h1>
     <div class="stats">
@@ -841,6 +849,6 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
 })();
 </script>
 <link rel="modulepreload" href="./vendor/three.module.min.js">
-<script type="module" src="./app.js?v=40"></script>
+<script type="module" src="./app.js?v=41"></script>
 </body>
 </html>
