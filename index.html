@@ -8,7 +8,7 @@
 /* 中文字体：OPPO Sans 4.0（可变字重 100–700），已裁剪到只含页面用到的字。改了文字后运行 tools/subset_font.py */
 @font-face {
   font-family: "OPPO Sans";
-  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=34") format("woff2");
+  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=35") format("woff2");
   font-weight: 100 700;
   font-display: swap;
 }
@@ -268,10 +268,10 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 #tabs { position: absolute; left: 50%; bottom: max(30px, calc(env(safe-area-inset-bottom) + 14px)); transform: translateX(-50%); z-index: 6; display: grid; grid-template-columns: repeat(3, 48px); place-items: center; gap: 6px; height: 48px; }
 /* 计划页、个人页的内容会滚到按钮下面：按钮后面垫一层由下往上变淡的底色 */
 #tabs.over::before { content: ""; position: absolute; z-index: -1; left: -200px; right: -200px; top: -34px; bottom: -40px; pointer-events: none; background: linear-gradient(to top, var(--pink-50) 62%, rgba(255, 245, 249, 0)); }
-#tabs .tab { width: 34px; height: 34px; flex: none; border-radius: 50%; display: grid; place-items: center; color: var(--ink-soft); background: #fff; box-shadow: 0 5px 14px rgba(120, 70, 100, .13);
+#tabs .tab { width: 34px; height: 34px; flex: none; border-radius: 50%; display: grid; place-items: center; color: var(--ink-soft); background: #fff; box-shadow: 0 5px 14px rgba(120, 70, 100, .15), 0 0 0 1px rgba(240, 220, 230, .9);
   transition: width .46s var(--out), height .46s var(--out), background-color .3s, color .3s, box-shadow .3s, transform .2s var(--out); }
 #tabs .tab svg { width: 17px; height: 17px; transition: transform .46s var(--out); }
-#tabs .tab.on { width: 46px; height: 46px; color: #fff; background: #ec86aa; box-shadow: 0 7px 16px rgba(232, 120, 159, .32); }
+#tabs .tab.on { width: 46px; height: 46px; color: #fff; background: linear-gradient(135deg, #f6b4cc, #e8789f); box-shadow: 0 8px 18px rgba(232, 120, 159, .42), 0 0 0 1px rgba(255, 255, 255, .5) inset; }
 #tabs .tab.on svg { transform: scale(1.22); }
 #tabs .tab:active { transform: scale(.92); }
 
@@ -736,6 +736,6 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
 })();
 </script>
 <link rel="modulepreload" href="./vendor/three.module.min.js">
-<script type="module" src="./app.js?v=34"></script>
+<script type="module" src="./app.js?v=35"></script>
 </body>
 </html>
