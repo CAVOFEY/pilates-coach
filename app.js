@@ -2,7 +2,7 @@
 // 流程：首页 → 摆放（看到全身、躺好）→ 跟练（计数 + 语音纠正）→ 小结
 // 骨架识别用 Google MediaPipe Pose（开源模型，本地运行）；动作标准判定和教练逻辑是本项目自己写的。
 
-import { MOVES, movePose } from './moves.js?v=42';
+import { MOVES, movePose } from './moves.js?v=43';
 const $ = (id) => document.getElementById(id);
 let TARGET_REPS = 10;   // 自由练习一组 10 次；按计划练时换成计划里定的次数
 
@@ -1096,7 +1096,7 @@ function demoCycle(now) {
 }
 const stdRange = (ex) => (ex.id === 'kneefold' ? [72, ex.top] : [ex.top, 180]);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=42'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=43'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -2035,7 +2035,8 @@ $('btnIntroNext').onclick = () => Run.look(Run.view + 1, 1);
 {
   let sx = 0, sy = 0, on = false;
   const el = $('intro');
-  el.addEventListener('pointerdown', (e) => { on = !!Run.plan && !e.target.closest('button, #introArt');   // 示范区里的拖动是用来转着看小人的，不算翻页 sx = e.clientX; sy = e.clientY; });
+  // 示范区里的拖动是用来转着看小人的，不算翻页
+  el.addEventListener('pointerdown', (e) => { on = !!Run.plan && !e.target.closest('button, #introArt'); sx = e.clientX; sy = e.clientY; });
   el.addEventListener('pointerup', (e) => {
     if (!on) return;
     on = false;
