@@ -2,7 +2,7 @@
 // 流程：首页 → 摆放（看到全身、躺好）→ 跟练（计数 + 语音纠正）→ 小结
 // 骨架识别用 Google MediaPipe Pose（开源模型，本地运行）；动作标准判定和教练逻辑是本项目自己写的。
 
-import { MOVES, moveJoints } from './moves.js?v=38';
+import { MOVES, moveJoints } from './moves.js?v=39';
 const $ = (id) => document.getElementById(id);
 let TARGET_REPS = 10;   // 自由练习一组 10 次；按计划练时换成计划里定的次数
 
@@ -1048,7 +1048,7 @@ const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg
 /** 这个动作“标准”的角度范围 [小, 大] */
 const stdRange = (ex) => (ex.id === 'kneefold' ? [72, ex.top] : [ex.top, 180]);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=38'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=39'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
