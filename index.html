@@ -8,7 +8,7 @@
 /* 中文字体：OPPO Sans 4.0（可变字重 100–700），已裁剪到只含页面用到的字。改了文字后运行 tools/subset_font.py */
 @font-face {
   font-family: "OPPO Sans";
-  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=44") format("woff2");
+  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=45") format("woff2");
   font-weight: 100 700;
   font-display: swap;
 }
@@ -452,6 +452,15 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 .dots { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
 .dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--teal-300); }
 .dots i.bad { background: var(--pink-500); }
+.dots i.na { background: var(--line); }
+.logitem.skip { opacity: .5; }
+.logitem .no { display: inline-block; min-width: 1.5em; font-style: normal; font-family: var(--font-num); font-weight: 700; color: var(--ink-soft); }
+/* 计划练完的报告页 */
+#planDone { overflow-y: auto; padding: max(34px, env(safe-area-inset-top)) 22px calc(28px + env(safe-area-inset-bottom)); gap: 18px; background: var(--pink-50); }
+#planDone > * { flex: none; }
+#planDone h1 { font-size: 34px; text-wrap: balance; }
+#planDone .stat b small { font-size: 12px; font-weight: 600; color: var(--ink-soft); }
+#pdTip { margin: 0; font-size: 14px; line-height: 1.7; color: var(--ink); }
 .empty { margin: 0; padding: 18px 6px; text-align: center; font-size: 14px; line-height: 1.7; color: var(--ink-soft); }
 #me .btn-link { font-size: 13px; color: var(--ink-soft); }
 
@@ -869,6 +878,29 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
     <p class="hintline" style="text-align:center">记录只存在这台手机的浏览器里，没有上传。</p>
   </section>
 
+  <!-- 按计划练完：这一次的报告 -->
+  <section class="screen" id="planDone" hidden>
+    <h1 id="pdTitle">计划完成。</h1>
+    <p class="sub" id="pdSub"></p>
+    <div class="stats">
+      <div class="stat"><b id="pdTime">0</b><span>用时</span></div>
+      <div class="stat"><b id="pdMoves">0</b><span>做完的动作</span></div>
+      <div class="stat"><b id="pdRate">–</b><span>做到标准</span></div>
+    </div>
+    <div class="card">
+      <h2>每个动作</h2>
+      <div id="pdList"></div>
+    </div>
+    <div class="card" id="pdTipBox">
+      <h2 id="pdTipHead">下次留意</h2>
+      <p id="pdTip"></p>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btnPdDone">完成</button>
+      <button class="btn btn-ghost" id="btnPdAgain">再练一遍</button>
+    </div>
+  </section>
+
   <!-- 动作详情：动画、介绍、练哪里、怎么做 -->
   <div id="moveSheet" hidden>
     <div class="sheet" role="dialog" aria-labelledby="moveName">
@@ -918,6 +950,6 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
 })();
 </script>
 <link rel="modulepreload" href="./vendor/three.module.min.js">
-<script type="module" src="./app.js?v=44"></script>
+<script type="module" src="./app.js?v=45"></script>
 </body>
 </html>

@@ -2,7 +2,7 @@
 // 流程：首页 → 摆放（看到全身、躺好）→ 跟练（计数 + 语音纠正）→ 小结
 // 骨架识别用 Google MediaPipe Pose（开源模型，本地运行）；动作标准判定和教练逻辑是本项目自己写的。
 
-import { MOVES, movePose, moveArrows } from './moves.js?v=44';
+import { MOVES, movePose, moveArrows } from './moves.js?v=45';
 const $ = (id) => document.getElementById(id);
 let TARGET_REPS = 10;   // 自由练习一组 10 次；按计划练时换成计划里定的次数
 
@@ -227,7 +227,7 @@ function readBody(lms) {
   const s = lockedSide;
   const ear = lms[P[s + 'Ear']], nose = lms[P.nose];
   const b = {
-    side: s,
+    side: s, lms,
     head: ear.v >= nose.v ? ear : nose,
     shoulder: lms[P[s + 'Sh']],
     hip: lms[P[s + 'Hip']],
@@ -251,6 +251,25 @@ function readBody(lms) {
     b.torsoTilt = (Math.atan2(Math.abs(b.shoulder.y - b.hip.y), Math.abs(b.shoulder.x - b.hip.x)) * 180) / Math.PI;
   }
   return b;
+}
+
+/**
+ * 跟着口令做的动作：读出“会动的那几个部位”现在在哪。
+ * 位置是相对参照点（这个动作里基本不动的地方）算的，所以整个人挪一下不算数；左右两边都看，看不清的点不算。
+ */
+function trackRead(b, tr) {
+  const lms = b.lms, ok = (i) => lms[i] && lms[i].v >= VIS;
+  const an = lms[P[b.side + tr.anchor]];
+  if (!an || an.v < VIS) return null;
+  const pts = {};
+  let size = 0;
+  for (const s of 'lr') {
+    for (const k of tr.pts) { const i = P[s + k]; if (ok(i)) pts[s + k] = [lms[i].x - an.x, lms[i].y - an.y]; }
+    // 身体大小：躯干和大腿里看起来长的那个（正对镜头时躯干会显得短）
+    if (ok(P[s + 'Sh']) && ok(P[s + 'Hip'])) size = Math.max(size, dist(lms[P[s + 'Sh']], lms[P[s + 'Hip']]));
+    if (ok(P[s + 'Hip']) && ok(P[s + 'Kn'])) size = Math.max(size, dist(lms[P[s + 'Hip']], lms[P[s + 'Kn']]));
+  }
+  return size > 1e-6 && Object.keys(pts).length ? { pts, size } : null;
 }
 
 // ---------- 摆放引导：缺哪个部位说哪个，躺好后自动开始 ----------
@@ -458,8 +477,13 @@ class Coach {
     this.top = d * ex.top; this.full = d * ex.full;
     this.onFinish = onFinish;
     // 摄像头不判定的动作：只按节拍喊口令，进度条跟着节拍走
-    this.free = !!ex.free;
+    // 跟着口令做的动作：有 track 的，看“会动的那几个部位”相对身体动了多少（1 = 示范小人的幅度），做到四成多就算到位；
+    // 没有 track 的只按节拍喊口令，进度条跟着节拍走
+    this.rel = !!ex.track;
+    this.free = !!ex.free && !this.rel;
+    this.base = null;         // 这一次开始前，那几个部位在哪
     if (this.free) { this.rest = 0; this.startThr = 0.2; this.top = 1; this.full = 1; }
+    if (this.rel) { this.d = 1; this.rest = 0; this.startThr = 0.15; this.top = 0.4; this.full = 1; }
     this.a = this.rest;       // 平滑后的角度
     this.seg = 'rest';        // 当前口令段：up / hold / down / rest
     this.segStart = 0;
@@ -488,12 +512,13 @@ class Coach {
       if (t - this.segStart >= this.segLen * 1000) this.enter({ up: 'hold', hold: 'down', down: 'rest', rest: 'up' }[this.seg], t);
       return;
     }
-    const val = b ? this.ex.value(b) : null;
+    const val = !b ? null : this.rel ? this.relVal(b) : this.ex.value(b);
     if (val == null) b = null;
     else this.a += (this.d * val - this.a) * 0.45;
     const a = this.a, c = this.cur;
     this.atTop = !!b && this.seg !== 'rest' && a >= this.top;
     if (b && c && this.seg !== 'rest') {
+      c.n++;
       if (a > c.peak) { c.peak = a; c.knee = b.kneeAngle; }
       if (this.atTop) {
         if (c.topAt == null) c.topAt = t;
@@ -508,12 +533,30 @@ class Coach {
     }
   }
 
+  /** 会动的那几个部位，比这一次开始前动了多少（取动得最多的一个点，按身体大小和示范幅度折算） */
+  relVal(b) {
+    const f = trackRead(b, this.ex.track);
+    if (!f) return null;
+    const base = this.base;
+    if (!base) { this.base = f; return 0; }
+    let m = 0;
+    for (const k in f.pts) {
+      const p = f.pts[k], q = base.pts[k];
+      if (!q) { base.pts[k] = p; continue; }
+      m = Math.max(m, Math.hypot(p[0] - q[0], p[1] - q[1]));
+      // 回到起始姿势休息的时候，慢慢跟上现在的位置，当作下一次的起点
+      if (this.seg === 'rest') base.pts[k] = [q[0] + (p[0] - q[0]) * 0.2, q[1] + (p[1] - q[1]) * 0.2];
+    }
+    if (this.seg === 'rest') base.size += (f.size - base.size) * 0.2;
+    return m / base.size / this.ex.track.amp;
+  }
+
   enter(seg, t) {
     this.seg = seg; this.segStart = t; this.segLen = TEMPO[seg];
     const say = this.ex.say;
     if (seg === 'up') {
       this.rep++;
-      this.cur = { t0: t, peak: this.a, topAt: null, topMs: 0, lastT: null, counted: false, flag: 0, knee: null };
+      this.cur = { t0: t, peak: this.a, topAt: null, topMs: 0, lastT: null, counted: false, flag: 0, knee: null, n: 0 };
       $('repNow').textContent = this.rep;
       replay($('repNow'), 'pop');
       Voice.say(say.up, 2);
@@ -534,14 +577,18 @@ class Coach {
     c.peakAngle = this.d * c.peak;
     let issue = null;
     if (this.free) { c.counted = true; this.count++; }
-    else if (c.peak <= this.startThr) issue = 'miss';
+    else if (this.rel && c.n < 6) {
+      // 这一次几乎没看清人：不判对错，只记次数
+      c.blind = true;
+      if (!c.counted) { c.counted = true; this.count++; }
+    } else if (c.peak <= this.startThr) issue = 'miss';
     else if (!c.counted) issue = 'low';
     else if ((issue = ex.extra?.(c) ?? null)) { /* 这个动作特有的问题 */ }
-    else if (c.topAt - c.t0 < 1500) issue = 'fast';
+    else if (c.topAt - c.t0 < (this.rel ? 600 : 1500)) issue = 'fast';      // 看幅度的动作到位线放得低，正常做也会早早过线，所以只抓明显是甩过去的
     else if (c.topMs < 1500) issue = 'noHold';
     const ok = c.counted && (issue == null || issue === 'noHold');
     this.reps.push({
-      ok, counted: c.counted, issue, peak: c.peakAngle, dur: (t - c.t0) / 1000,
+      ok, counted: c.counted, issue, blind: !!c.blind, peak: c.peakAngle, dur: (t - c.t0) / 1000,
       // lvl：做到了到位线的几成（1 = 刚好到线）
       lvl: Math.round(clamp((c.peak - this.rest) / (this.top - this.rest), 0, 1.3) * 100) / 100,
       topMs: Math.round(c.topMs), reach: c.topAt == null ? null : Math.round(c.topAt - c.t0), knee: c.knee == null ? null : Math.round(c.knee),
@@ -589,6 +636,7 @@ class Coach {
       good: this.reps.filter((r) => r.ok).length,
       counted: counted.length,
       attempts: this.reps.length,
+      blind: this.reps.filter((r) => r.blind).length,
       avgPeak: counted.length ? counted.reduce((s, r) => s + r.peak, 0) / counted.length : 0,
       avgHold: counted.length ? counted.reduce((s, r) => s + r.topMs, 0) / counted.length / 1000 : 0,
       seconds: this.t0 == null ? 0 : (t - this.t0) / 1000,
@@ -1102,7 +1150,7 @@ function demoCycle(now) {
 }
 const stdRange = (ex) => (ex.id === 'kneefold' ? [72, ex.top] : [ex.top, 180]);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=44'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=45'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -1281,15 +1329,61 @@ const CAM_INFO = {
   kneefold: { tags: ['核心'], intro: '仰卧屈膝，双腿抬到大腿竖直、小腿放平，腰一直贴着垫子。', good: ['练下腹和核心的稳定', '学会抬腿时不拱腰', '摄像头会数次数、纠正动作'] },
   heelslide: { tags: ['核心', '臀腿'], intro: '仰卧屈膝，脚跟贴着垫子慢慢滑出去，把腿伸直再收回。', good: ['腿动的时候练骨盆不动', '对腰很友好的核心入门动作', '摄像头会数次数、纠正动作'] },
 };
-/** 跟着口令做的动作，也包成和 EXERCISES 里一样的样子，讲解页、跟练页就能走同一套流程。free = 摄像头不判定这个动作 */
+/**
+ * 八个跟着口令做的动作，摄像头各看哪里：pts = 会动的部位（Sh 肩 / El 肘 / Wr 手腕 / Hip 髋 / Kn 膝 / An 脚踝，左右都看），
+ * anchor = 这个动作里基本不动、拿来当参照的部位。只看这些部位的幅度够不够，别的地方不管。
+ */
+const TRACKS = {
+  tablechild: { pts: ['Hip', 'Sh'], anchor: 'Kn' },           // 臀部往后坐
+  thread: { pts: ['Sh', 'El', 'Wr'], anchor: 'Hip' },         // 上背转开，手穿过去
+  birddog: { pts: ['Wr', 'An'], anchor: 'Hip' },              // 对侧的手和脚伸出去
+  leanhold: { pts: ['Sh'], anchor: 'Hip' },                   // 上身后仰
+  diagcrunch: { pts: ['Sh', 'El', 'Kn'], anchor: 'Hip' },     // 上身转，膝盖抬
+  sideclam: { pts: ['Kn'], anchor: 'Hip' },                   // 上面的膝盖打开
+  sideleg: { pts: ['Kn', 'An'], anchor: 'Hip' },              // 上面的腿抬高
+  sitside: { pts: ['Sh', 'El', 'Wr'], anchor: 'Hip' },        // 上身侧弯，手举过头
+};
+/** 示范小人做这个动作时，这些部位相对参照点动了多少（以躯干长度为 1）。真人做到它的四成多就算到位 */
+function trackAmp(m, tr) {
+  const mid = (J, k) => [0, 1, 2].map((i) => (J['l' + k][i] + J['r' + k][i]) / 2);
+  let amp = Infinity;
+  for (const B of m.tops) {
+    const a0 = mid(m.rest, tr.anchor), a1 = mid(B, tr.anchor);
+    let e = 0;
+    for (const k of tr.pts) for (const sd of 'lr') {
+      const dv = [0, 1, 2].map((i) => (B[sd + k][i] - a1[i]) - (m.rest[sd + k][i] - a0[i]));
+      // 从侧面看到的幅度；镜头角度不一样时看到的会小一些，所以至少按实际幅度的一半算
+      e = Math.max(e, Math.hypot(dv[0], dv[1]), Math.hypot(dv[0], dv[1], dv[2]) * 0.5);
+    }
+    amp = Math.min(amp, e);
+  }
+  return clamp(amp / 0.5, 0.3, 1.6);
+}
+/** 跟着口令做的动作，也包成和 EXERCISES 里一样的样子，讲解页、跟练页就能走同一套流程。free = 不用先躺好、不量角度；track = 摄像头看哪些部位的幅度 */
 const freeEx = (m) => {
   const [first, up, hold, down] = m.steps;
+  const tr = TRACKS[m.id] && { ...TRACKS[m.id] };
+  if (tr) tr.amp = trackAmp(m, tr);
   return {
+    track: tr || null,
+    cues: {
+      miss: `跟着口令，${up[0]}。`,
+      low: `幅度再大一点。${up[1]}。`,
+      fast: '慢一点，用四拍做到位。',
+      noHold: '到位后先停住，等我喊再回来。',
+    },
+    names: { miss: '没跟上', low: '幅度不够', fast: '做得太快', noHold: '到位后没停住' },
+    advice: {
+      miss: '听到口令就开始动，跟不上也没关系，先把节奏对上。',
+      low: `${up[1]}，做到自己舒服的最大幅度。`,
+      fast: '用四拍慢慢做到位，不要靠甩。慢，才练得到。',
+      noHold: '到位后先停住，等听到下一句口令再回来。',
+    },
     id: m.id, name: m.name, free: true, move: m, muscles: m.tags, steps: m.steps, sides: m.sides,
     pos: first[1], cue: `${up[1]}。${hold[1]}`,
     seg: { up: `呼气，${up[0]}`, hold: '停住，吸气', down: `呼气，${down[0]}`, rest: '吸气，准备' },
-    say: { up: `呼气，${up[0]}。`, hold: '停住，吸气。', almost: '停住，吸气。', down: `呼气，慢慢${down[0]}。` },
-    meter: '动作节拍', hot: m.hot, tuck: m.hot.waist ? 0.6 : 0, cam: m.view,
+    say: { up: `呼气，${up[0]}。`, hold: '停住，吸气。', almost: tr ? '停住，幅度再大一点。' : '停住，吸气。', down: `呼气，慢慢${down[0]}。` },
+    meter: tr ? '动作幅度' : '动作节拍', hot: m.hot, tuck: m.hot.waist ? 0.6 : 0, cam: m.view,
   };
 };
 const LIB = [
@@ -1383,7 +1477,7 @@ const MoveSheet = {
     if (!m) return;
     $('moveName').textContent = m.name;
     $('moveTags').innerHTML = tagHtml(m.tags, '练到');
-    $('moveKind').textContent = m.cam ? '摄像头会数次数、纠正动作' : '跟着口令和小人做，摄像头不纠正这个动作';
+    $('moveKind').textContent = m.cam ? '摄像头会数次数、纠正动作' : m.ex.track ? '摄像头会看动的部位幅度够不够，别的地方不苛求' : '跟着口令和小人做，摄像头不纠正这个动作';
     $('moveIntro').textContent = m.intro;
     $('moveGood').innerHTML = m.good.map((t) => `<li>${t}</li>`).join('');
     $('moveHow').innerHTML = m.how.map((t) => `<li>${t}</li>`).join('');
@@ -1398,17 +1492,14 @@ const MoveSheet = {
 };
 
 const TAB_ORDER = ['plan', 'home', 'me'];     // 底部三个按钮从左到右
-/** 底部三个按钮排在一段圆弧上：当前这一页的按钮在圆弧最高处，换页时整段圆弧跟着转过去 */
+/** 底部三个按钮：位置不动。在首页时中间高、两边低，像一段圆弧；在两边的页面时排成一行，选中的那个放大并往上提一点 */
 function arcTabs(id) {
-  const at = TAB_ORDER.indexOf(id), R = 170, STEP = 0.3;
-  const tabs = $('tabs');
+  const at = TAB_ORDER.indexOf(id), tabs = $('tabs');
   tabs.dataset.page = id;
   if (at < 0) return;
   tabs.querySelectorAll('.slot').forEach((el, i) => {
-    const a = (i - at) * STEP;
-    el.style.setProperty('--x', `${(Math.sin(a) * R).toFixed(1)}px`);
-    el.style.setProperty('--y', `${((1 - Math.cos(a)) * R).toFixed(1)}px`);
-    el.style.setProperty('--s', Math.abs(i - at) > 1 ? 0.86 : 1);
+    el.style.setProperty('--x', `${(i - 1) * 52}px`);
+    el.style.setProperty('--y', i === at ? '0px' : at === 1 ? '8px' : '6px');
   });
 }
 
@@ -1630,11 +1721,11 @@ const PlanUI = {
 
 /** 按计划练：先在讲解页左右滑着把每个动作看一遍，点开始后在跟练画面里一个接一个做 */
 const Run = {
-  plan: null, i: 0, view: 0,
+  plan: null, i: 0, view: 0, results: [], t0: 0,
   start(p) {
     if (!p || !Plans.items(p).length) return;
-    this.plan = { name: p.name || '未命名计划', items: Plans.items(p) };
-    this.i = 0;
+    this.plan = { id: p.id, name: p.name || '未命名计划', items: Plans.items(p) };
+    this.i = 0; this.results = []; this.t0 = 0;
     Plans.last = p.id; Store.set('pilates.lastPlan', p.id); Store.set('pilates.todayHide', 0);
     this.look(0, 0);
   },
@@ -1699,7 +1790,7 @@ const MeUI = {
       `<span class="wd${days.has(x.key) ? ' did' : ''}${x.key === dayKey() ? ' today' : ''}"><i></i>${x.w}</span>`).join('');
     $('meLogCount').textContent = list.length ? `最近 ${Math.min(list.length, 30)} 组` : '';
     $('meLog').innerHTML = list.slice(0, 30).map((r) => {
-      const ex = exById(r.ex), t = new Date(r.at), mv = libById(r.ex);
+      const mv = libById(r.ex), ex = mv?.ex, t = new Date(r.at);
       const when = `${t.getMonth() + 1}月${t.getDate()}日 ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
       if (r.kind === 'f') return `<div class="logitem"><b>${mv?.name ?? r.ex}<small>${when}</small></b><span class="sc full">${r.n ?? r.secs}<small>${r.n != null ? '次' : '秒'} · 跟做</small></span>${r.plan ? `<p>${esc(r.plan)}${r.full ? '' : ' · 没做完'}</p>` : ''}</div>`;
       const note = r.top && ex?.names[r.top] ? `最常出现：${ex.names[r.top]}` : r.good >= r.attempts ? '全部标准' : '';
@@ -1744,7 +1835,7 @@ const App = {
 
   /** 切换页面。from = 触发切换的按钮：进入跟练时，深色画面从这个按钮的位置展开 */
   show(id, from) {
-    const all = ['home', 'intro', 'stageScreen', 'summary', 'plan', 'me', 'planEdit'].map($);
+    const all = ['home', 'intro', 'stageScreen', 'summary', 'plan', 'me', 'planEdit', 'planDone'].map($);
     // 底部三个按钮只在首页、计划、我的这三页出现；当前这一页的按钮变大变亮
     $('tabs').hidden = !['home', 'plan', 'me'].includes(id);
     $('tabs').classList.toggle('over', id !== 'home');
@@ -1765,7 +1856,7 @@ const App = {
     }
     const toIntro = id === 'intro' && cur.id === 'home';
     const slide = TAB_ORDER.includes(id) && TAB_ORDER.includes(cur.id);
-    const kind = slide ? 'enter-slide' : toIntro ? 'enter-intro' : id === 'stageScreen' && from ? 'enter-reveal' : id === 'summary' ? 'enter-rise' : 'enter-fade';
+    const kind = slide ? 'enter-slide' : toIntro ? 'enter-intro' : id === 'stageScreen' && from ? 'enter-reveal' : id === 'summary' || id === 'planDone' ? 'enter-rise' : 'enter-fade';
     if (slide) {
       // 往右边的页面走：新页面从右边进来，旧页面往左让
       const dir = Math.sign(TAB_ORDER.indexOf(id) - TAB_ORDER.indexOf(cur.id));
@@ -1919,7 +2010,7 @@ const App = {
       if (t - this.lostSince > 1500) { this.lostSince = t + 6000; toast('看不到你了，回到画面里', 'info', 3000); Voice.say('看不到你了，回到画面里。', 0); }
     } else this.lostSince = null;
     const c = this.coach;
-    c.update(b?.core ? b : null, t);
+    c.update(b && (c.rel || b.core) ? b : null, t);
     // 记下这一刻的 3D 姿势，练完后用来和标准动作对比
     let J = Run.plan ? null : this.mode === 'demo' ? stdJoints(this.source.liftAt(t)) : world && b?.core ? userJoints(world) : null;
     if (J && c.rep && !c.done) {
@@ -1963,6 +2054,7 @@ const App = {
   prepMove(first) {
     const pl = Run.plan, it = pl.items[Run.i], N = pl.items.length;
     EX = libById(it.id).ex; TARGET_REPS = it.n;
+    if (first) Run.t0 = Date.now();
     this.phase = 'prep';
     this.coach = null; this.restS = []; this.track = []; this.trackJ = null; this.lostSince = null;
     const id = ++this.prepId;
@@ -1987,15 +2079,21 @@ const App = {
     }, 5000);
   },
 
-  /** 把刚做的这个动作记到“我的”里。full = 是不是做完了 */
+  /** 把刚做的这个动作记到“我的”里；按计划练时也记进这一次计划的结果。full = 是不是做完了 */
   logMove(full) {
     const c = this.coach;
-    if (!c || !c.reps.length || this.mode !== 'camera') return null;
-    const s = c.summary(performance.now()), plan = Run.plan ? { plan: Run.plan.name } : {};
-    if (EX.free) Log.add({ at: Date.now(), ex: EX.id, kind: 'f', n: s.attempts, full, ...plan });
+    if (!c || !c.reps.length) return null;
+    if (c.logged) return c.logged;          // 这个动作已经记过了（做完后的休息里点了结束）
+    const s = c.logged = c.summary(performance.now()), plan = Run.plan ? { plan: Run.plan.name } : {};
+    // judged = 摄像头真的判过（不是只喊节拍，也不是全程没看清人）
+    s.judged = !c.free && s.blind < s.attempts;
+    const top = s.topIssue?.[0] ?? null;
+    if (Run.plan) Run.results[Run.i] = { id: EX.id, target: TARGET_REPS, attempts: s.attempts, good: s.good, judged: s.judged, top, full, reps: s.reps.map((r) => (r.blind ? 2 : r.ok ? 1 : 0)) };
+    if (this.mode !== 'camera') return s;
+    if (!s.judged) Log.add({ at: Date.now(), ex: EX.id, kind: 'f', n: s.attempts, full, ...plan });
     else Log.add({
       at: Date.now(), ex: EX.id, good: s.good, attempts: s.attempts, target: TARGET_REPS, seconds: Math.round(s.seconds),
-      avgPeak: Math.round(s.avgPeak || 0), top: s.topIssue?.[0] ?? null, reps: s.reps.map((r) => (r.ok ? 1 : 0)), ...plan,
+      avgPeak: Math.round(s.avgPeak || 0), top, reps: s.reps.map((r) => (r.ok ? 1 : 0)), ...plan,
     });
     return s;
   },
@@ -2007,7 +2105,7 @@ const App = {
     const id = ++this.prepId;
     toast(`${name} 完成`, 'good', 2400);
     $('phaseText').textContent = '完成';
-    const score = s && !EX.free ? `${s.attempts} 次里有 ${s.good} 次标准。` : '';
+    const score = s?.judged ? `${s.attempts} 次里有 ${s.good} 次标准。` : '';
     speakThen(`OK，${name}完成。${score}${last ? '' : '休息一下。'}`, () => {
       if (id !== this.prepId || !Run.plan) return;
       if (last) return this.planEnd(true);
@@ -2016,12 +2114,42 @@ const App = {
     }, last ? 1500 : 4500);
   },
 
-  /** 按计划练结束（done = 全部做完；否则是中途点了结束）：回到“我的”，看记录 */
+  /** 按计划练结束（done = 全部做完；否则是中途点了结束）：给一页报告。一个动作都没做就直接回首页 */
   planEnd(done) {
     if (!done) this.logMove(false);
+    const r = { id: Run.plan.id, name: Run.plan.name, items: Run.plan.items, results: Run.results, secs: Run.t0 ? (Date.now() - Run.t0) / 1000 : 0, done };
     this.home();
+    if (!r.results.some(Boolean)) return;
     if (done) Voice.say('计划完成，辛苦了。', 2);
-    this.tab('me');
+    this.planReport = r;
+    this.renderPlanDone(r);
+    this.show('planDone');
+    $('planDone').scrollTop = 0;
+  },
+  /** 计划的报告页：用了多久、做了几个动作、每个动作几次标准、下次留意什么 */
+  renderPlanDone(r) {
+    const res = r.items.map((it, i) => ({ it, m: libById(it.id), x: r.results[i] || null }));
+    const did = res.filter((a) => a.x), judged = did.filter((a) => a.x.judged);
+    const good = judged.reduce((n, a) => n + a.x.good, 0), all = judged.reduce((n, a) => n + a.x.attempts, 0);
+    $('pdTitle').textContent = r.done ? '计划完成。' : '先练到这儿。';
+    $('pdSub').textContent = r.name;
+    $('pdTime').innerHTML = `${Math.floor(r.secs / 60)}<small>分</small>${String(Math.round(r.secs % 60)).padStart(2, '0')}<small>秒</small>`;
+    $('pdMoves').innerHTML = `${did.filter((a) => a.x.full).length}<small> / ${r.items.length} 个</small>`;
+    $('pdRate').innerHTML = all ? `${good}<small> / ${all} 次</small>` : '–';
+    $('pdList').innerHTML = res.map(({ m, x }, i) => {
+      const name = `<b><i class="no">${i + 1}</i>${m.name}</b>`;
+      if (!x) return `<div class="logitem skip">${name}<span class="sc">没做</span></div>`;
+      const dots = `<span class="dots">${x.reps.map((k) => `<i${k === 0 ? ' class="bad"' : k === 2 ? ' class="na"' : ''}></i>`).join('')}</span>`;
+      const cut = x.full ? '' : `做了 ${x.attempts} / ${x.target} 次`;
+      if (!x.judged) return `<div class="logitem">${name}<span class="sc full">${x.attempts}<small>次 · 跟做</small></span>${dots}<p>${[cut, m.ex.track ? '摄像头没看清动作，只记了次数' : ''].filter(Boolean).join(' · ')}</p></div>`;
+      const note = [cut, x.top && m.ex.names[x.top] ? `最常出现：${m.ex.names[x.top]}` : x.good >= x.attempts ? '全部标准' : ''].filter(Boolean).join(' · ');
+      return `<div class="logitem">${name}<span class="sc${x.good >= x.attempts ? ' full' : ''}">${x.good} / ${x.attempts}<small>次标准</small></span>${dots}${note ? `<p>${note}</p>` : ''}</div>`;
+    }).join('');
+    // 下次留意：标准率最低、而且有明确问题的那个动作
+    const worst = judged.filter((a) => a.x.top && a.m.ex.advice?.[a.x.top]).sort((a, b) => a.x.good / a.x.attempts - b.x.good / b.x.attempts)[0];
+    $('pdTipBox').hidden = !judged.length;
+    $('pdTipHead').textContent = worst ? `下次留意 · ${worst.m.name}` : '这一套做得很稳';
+    $('pdTip').textContent = worst ? worst.m.ex.advice[worst.x.top] : '摄像头看到的每一次都到位了。下次可以给每个动作多加两次。';
   },
 
   finish() {
@@ -2288,6 +2416,8 @@ $('btnCopy').onclick = async () => {
 $('btnDemo').onclick = () => App.start('demo', $('btnDemo'));
 $('btnBack').onclick = () => App.home();
 $('btnHome').onclick = () => App.home();
+$('btnPdDone').onclick = () => App.tab('me');
+$('btnPdAgain').onclick = () => Run.start(Plans.get(App.planReport?.id));
 $('btnAgain').onclick = () => App.start(App.mode);
 $('btnEnd').onclick = () => App.finish();
 $('btnForce').onclick = () => App.beginWorkout(null);
