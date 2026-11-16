@@ -331,6 +331,26 @@ export class Viewer {
     }
   }
 
+  /** 顺着动作方向的提示箭头（跟着口令做的动作用）。list = [{ pos, dir }]，最多两个；t 同 arrowAt */
+  flowArrows(t, list = []) {
+    const on = t != null && t >= 0 && t < 1.5;
+    this.arrowDn.visible = false;
+    const p = on ? (t % 0.75) / 0.75 : 0, rise = 1 - (1 - p) ** 3;
+    if (on) this.arrowMat.opacity = p < 0.12 ? p / 0.12 : 1 - ((p - 0.12) / 0.88) ** 2;
+    const UP = this._up ??= new THREE.Vector3(0, 1, 0), way = this._way ??= new THREE.Vector3();
+    this.arrows.forEach((g, i) => {
+      const a = list[i];
+      g.visible = on && !!a;
+      if (!g.visible) return;
+      way.fromArray(a.dir).normalize();
+      // 从关节外面一点出发，顺着方向“biu”出去
+      g.position.fromArray(a.pos).addScaledVector(way, 0.12 + rise * 0.3);
+      g.position.y = Math.max(0.03, g.position.y);
+      g.quaternion.setFromUnitVectors(UP, way);
+      g.scale.setScalar(0.75 + 0.35 * Math.min(1, p / 0.18));
+    });
+  }
+
   start() {
     if (this.raf) return;
     const loop = (now) => {

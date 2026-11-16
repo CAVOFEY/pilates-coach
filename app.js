@@ -2,7 +2,7 @@
 // 流程：首页 → 摆放（看到全身、躺好）→ 跟练（计数 + 语音纠正）→ 小结
 // 骨架识别用 Google MediaPipe Pose（开源模型，本地运行）；动作标准判定和教练逻辑是本项目自己写的。
 
-import { MOVES, movePose } from './moves.js?v=43';
+import { MOVES, movePose, moveArrows } from './moves.js?v=44';
 const $ = (id) => document.getElementById(id);
 let TARGET_REPS = 10;   // 自由练习一组 10 次；按计划练时换成计划里定的次数
 
@@ -1087,6 +1087,12 @@ const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg
 /** 这个动作“标准”的角度范围 [小, 大] */
 /** 示范小人做到 p（0~1）时的关节位置。rep = 第几次（左右交替的动作靠它换边） */
 const exJoints = (ex, p, rep = 0) => (ex.free ? movePose(ex.move, p, rep) : stdJoints(p, ex));
+/** 示范小人旁边的蓝色箭头。t = 这一次动作开始后过了几秒（不在开头传 null） */
+const showArrows = (v, ex, J, t, rep = 0) => {
+  if (REDUCED) t = null;
+  if (ex.free) v.flowArrows(t, moveArrows(ex.move, J, rep));
+  else v.arrowAt(J, ex.arrow ? t : null, ex.arrow || {});
+};
 /** 示范动画循环到哪了：抬起 2.4 秒，停 2 秒，放下 2.6 秒，休息 1.6 秒。eff = 用力的表情：开始发力 1 秒后出现，开始放下 1 秒后恢复 */
 function demoCycle(now) {
   const io = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
@@ -1096,7 +1102,7 @@ function demoCycle(now) {
 }
 const stdRange = (ex) => (ex.id === 'kneefold' ? [72, ex.top] : [ex.top, 180]);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=43'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=44'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -1114,7 +1120,7 @@ const Intro3D = {
             const { c, p, rep, eff } = demoCycle(now);
             if (this.exId !== EX.id) { this.exId = EX.id; v.frame(EX.cam); }   // 换了动作：镜头对准新动作的范围
             const J = exJoints(EX, p, rep);
-            v.arrowAt(J, REDUCED || !EX.arrow ? null : c, EX.arrow || {});
+            showArrows(v, EX, J, c, rep);
             v.pose('std', J, p, eff, EX.hot, p * EX.tuck);   // 最后一个数：核心收紧多少，肚子跟着变扁
           };
           v.start();
@@ -1305,7 +1311,25 @@ const DEFAULT_PLANS = [
 const Plans = {
   mine: Store.get('pilates.plans', []),          // 自己建的计划：[{ id, name, items: [{ id 动作, n 次数或秒数 }] }]
   last: Store.get('pilates.lastPlan', null),     // 上一次练的是哪个计划
-  save() { Store.set('pilates.plans', this.mine); },
+  favs: Store.get('pilates.favs', []),           // 收藏的推荐计划（id）
+  order: Store.get('pilates.planOrder', []),     // “我的计划”里从上到下的顺序（id）；不在里面的排最前
+  save() { Store.set('pilates.plans', this.mine); Store.set('pilates.favs', this.favs); Store.set('pilates.planOrder', this.order); },
+  /** “我的计划”里显示的：自己建的 + 收藏的推荐计划，按拖出来的顺序 */
+  shown() {
+    const all = [...this.mine, ...this.favs.map((id) => DEFAULT_PLANS.find((p) => p.id === id)).filter(Boolean)];
+    return all.map((p, i) => [p, this.order.indexOf(p.id), i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map((a) => a[0]);
+  },
+  reorder(ids) { this.order = ids; this.save(); },
+  remove(id) { this.mine = this.mine.filter((p) => p.id !== id); this.order = this.order.filter((x) => x !== id); this.save(); },
+  /** 收藏或取消收藏一个推荐计划；返回现在是不是收藏着 */
+  fav(id) {
+    const on = !this.favs.includes(id);
+    const ids = this.shown().map((p) => p.id).filter((x) => x !== id);
+    this.favs = on ? [id, ...this.favs] : this.favs.filter((x) => x !== id);
+    this.order = on ? [id, ...ids] : ids;          // 刚收藏的排在最上面
+    this.save();
+    return on;
+  },
   get(id) { return this.mine.find((p) => p.id === id) || DEFAULT_PLANS.find((p) => p.id === id); },
   items(p) { return p.items.filter((it) => libById(it.id)); },
   /** 这个计划主要练哪里：把每个动作的部位按时长加起来，取最多的四个 */
@@ -1337,8 +1361,10 @@ const MoveView = {
         v.onTick = (now) => {
           const ex = o.ex;
           if (!ex) return;
-          const { p, rep, eff } = demoCycle(now);
-          v.pose('std', exJoints(ex, p, rep), p, eff, ex.hot, p * ex.tuck);
+          const { c, p, rep, eff } = demoCycle(now);
+          const J = exJoints(ex, p, rep);
+          showArrows(v, ex, J, c, rep);
+          v.pose('std', J, p, eff, ex.hot, p * ex.tuck);
         };
         v.start();
       }
@@ -1371,16 +1397,169 @@ const MoveSheet = {
   close() { $('moveSheet').hidden = true; },
 };
 
+const TAB_ORDER = ['plan', 'home', 'me'];     // 底部三个按钮从左到右
+/** 底部三个按钮排在一段圆弧上：当前这一页的按钮在圆弧最高处，换页时整段圆弧跟着转过去 */
+function arcTabs(id) {
+  const at = TAB_ORDER.indexOf(id), R = 170, STEP = 0.3;
+  const tabs = $('tabs');
+  tabs.dataset.page = id;
+  if (at < 0) return;
+  tabs.querySelectorAll('.slot').forEach((el, i) => {
+    const a = (i - at) * STEP;
+    el.style.setProperty('--x', `${(Math.sin(a) * R).toFixed(1)}px`);
+    el.style.setProperty('--y', `${((1 - Math.cos(a)) * R).toFixed(1)}px`);
+    el.style.setProperty('--s', Math.abs(i - at) > 1 ? 0.86 : 1);
+  });
+}
+
+/** 计划列表上的手势：往左滑露出后面的按钮；“我的计划”里长按后可以上下拖动排序 */
+const PlanGesture = {
+  open: null, g: null, block: false, W: 84,
+  close() { this.open?.classList.remove('open'); this.open = null; },
+  init() {
+    const root = $('plan');
+    root.addEventListener('pointerdown', (e) => this.down(e));
+    root.addEventListener('pointermove', (e) => this.move(e));
+    root.addEventListener('pointerup', (e) => this.up(e));
+    root.addEventListener('pointercancel', (e) => this.up(e));
+    // 拖动排序的时候不让页面跟着滚
+    root.addEventListener('touchmove', (e) => { if (this.g?.mode === 'drag') e.preventDefault(); }, { passive: false });
+    root.addEventListener('contextmenu', (e) => { if (e.target.closest('.prow')) e.preventDefault(); });
+    // 刚滑完、刚拖完的那一下不算点击；有一行滑开着的时候，点别处只是把它合上
+    root.addEventListener('click', (e) => {
+      const shut = !this.block && this.open && !e.target.closest('.pact');
+      if (shut) this.close();
+      if (this.block || shut) { e.stopPropagation(); e.preventDefault(); }
+      this.block = false;
+    }, true);
+  },
+  down(e) {
+    this.block = false;
+    const row = e.target.closest('.prow');
+    if (!row || e.button || e.target.closest('.pact') || this.g) return;
+    const g = this.g = { row, id: e.pointerId, x: e.clientX, y: e.clientY, mode: null, base: row === this.open ? -this.W : 0 };
+    const list = row.parentElement;
+    if (list.id === 'planMine' && list.children.length > 1) g.timer = setTimeout(() => this.lift(), 420);
+  },
+  move(e) {
+    const g = this.g;
+    if (!g || e.pointerId !== g.id) return;
+    const dx = e.clientX - g.x, dy = e.clientY - g.y;
+    if (!g.mode) {
+      if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) {
+        clearTimeout(g.timer);
+        g.mode = 'swipe';
+        if (this.open && this.open !== g.row) this.close();
+        g.row.classList.add('moving');
+        try { g.row.setPointerCapture(g.id); } catch { /* 忽略 */ }
+      } else if (Math.abs(dy) > 8) { clearTimeout(g.timer); this.g = null; return; }   // 上下滑：交给页面滚动
+      else return;
+    }
+    if (g.mode === 'swipe') {
+      let x = Math.min(0, g.base + dx);
+      if (x < -this.W) x = -this.W + (x + this.W) * 0.25;      // 拉过头有阻力
+      g.cur = x;
+      g.row.querySelector('.plancard').style.transform = `translateX(${x}px)`;
+    } else this.drag(e.clientY);
+  },
+  up(e) {
+    const g = this.g;
+    if (!g || e.pointerId !== g.id) return;
+    clearTimeout(g.timer);
+    this.g = null;
+    if (g.mode === 'swipe') {
+      this.block = true;
+      const open = (g.cur ?? g.base) < -this.W / 2;
+      g.row.classList.remove('moving');
+      g.row.querySelector('.plancard').style.transform = '';
+      g.row.classList.toggle('open', open);
+      this.open = open ? g.row : this.open === g.row ? null : this.open;
+    } else if (g.mode === 'drag') { this.block = true; this.drop(g); }
+  },
+  /** 长按到时间了：把这一行拎起来 */
+  lift() {
+    const g = this.g;
+    if (!g) return;
+    this.close();
+    g.mode = 'drag';
+    const list = g.row.parentElement;
+    g.rows = [...list.children];
+    g.rects = g.rows.map((r) => r.getBoundingClientRect());
+    g.from = g.to = g.rows.indexOf(g.row);
+    g.step = g.rects[g.from].height + 10;
+    list.classList.add('sorting');
+    g.row.classList.add('lift');
+    g.row.style.transform = 'scale(1.03)';
+    try { g.row.setPointerCapture(g.id); } catch { /* 忽略 */ }
+    try { navigator.vibrate?.(12); } catch { /* 忽略 */ }
+  },
+  drag(y) {
+    const g = this.g, dy = y - g.y, me = g.rects[g.from], mid = me.top + me.height / 2 + dy;
+    g.row.style.transform = `translateY(${dy}px) scale(1.03)`;
+    let to = g.from;
+    g.rects.forEach((r, i) => {
+      const c = r.top + r.height / 2;
+      if (i < g.from && mid < c) to = Math.min(to, i);
+      if (i > g.from && mid > c) to = i;
+    });
+    g.to = to;
+    g.rows.forEach((r, i) => {
+      if (i === g.from) return;
+      r.style.transform = i >= to && i < g.from ? `translateY(${g.step}px)` : i > g.from && i <= to ? `translateY(${-g.step}px)` : '';
+    });
+  },
+  drop(g) {
+    // 先滑到新位置，再按新顺序重画
+    let dy = 0;
+    for (let i = Math.min(g.from, g.to); i <= Math.max(g.from, g.to); i++) if (i !== g.from) dy += (g.rects[i].height + 10) * (g.to > g.from ? 1 : -1);
+    g.row.classList.add('settle');
+    g.row.style.transform = `translateY(${dy}px)`;
+    const ids = g.rows.map((r) => r.dataset.id);
+    ids.splice(g.to, 0, ids.splice(g.from, 1)[0]);
+    setTimeout(() => { g.row.parentElement?.classList.remove('sorting'); if (g.to !== g.from) Plans.reorder(ids); PlanUI.render(); }, 190);
+  },
+};
+
 const PlanUI = {
   cur: null, filter: '',
-  /** 计划列表 */
-  render() {
-    const card = (p) => `<div class="plancard" data-open="${p.id}" role="button" tabindex="0">
-      <span class="tx"><b>${esc(p.name || '未命名计划')}</b><small>${Plans.meta(p)}</small>
+  /** 计划列表。pop = 刚加进“我的计划”的那个 id（让它跳一下） */
+  render(pop) {
+    const IC = {
+      del: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7h15M9.5 7V4.8h5V7M6.5 7l.9 12h9.2l.9-12M10 11v5M14 11v5"/></svg>',
+      star: (fill) => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="${fill ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg>`,
+    };
+    const row = (p, kind) => {
+      const n = Plans.items(p).length, faved = Plans.favs.includes(p.id);
+      const act = kind === 'mine' ? `<button class="pact del" data-act="del">${IC.del}删除</button>`
+        : `<button class="pact fav" data-act="fav">${IC.star(faved)}${faved ? '取消收藏' : '收藏'}</button>`;
+      return `<div class="prow${p.id === pop && kind !== 'rec' ? ' pop' : ''}" data-id="${p.id}" data-kind="${kind}">${act}
+      <div class="plancard" data-open="${p.id}" role="button" tabindex="0">
+      <span class="ptile"><b>${n ? Plans.mins(p) : '–'}</b><small>分钟</small></span>
+      <span class="tx"><b><span>${esc(p.name || '未命名计划')}</span>${faved ? IC.star(1) : ''}</b><small>${n ? `${n} 个动作` : '还没有动作'}</small>
       <span class="ptags">${Plans.tags(p).map((t) => `<i>${t}</i>`).join('')}</span></span>
-      <button class="pgo" data-go="${p.id}"${Plans.items(p).length ? '' : ' disabled'}>开始</button></div>`;
-    $('planMine').innerHTML = Plans.mine.map(card).join('') || '<p class="empty">还没有自己的计划。<br>点下面的按钮建一个。</p>';
-    $('planDefault').innerHTML = DEFAULT_PLANS.map(card).join('');
+      <button class="pgo" data-go="${p.id}"${n ? '' : ' disabled'}>开始</button></div></div>`;
+    };
+    PlanGesture.open = null;
+    $('planMine').innerHTML = Plans.shown().map((p) => row(p, p.fixed ? 'fav' : 'mine')).join('')
+      || '<p class="empty">这里还是空的。<br>点右上角的加号建一个，或者把下面的推荐计划往左滑，收藏进来。</p>';
+    $('planDefault').innerHTML = DEFAULT_PLANS.map((p) => row(p, 'rec')).join('');
+    // 第一次来：让第一个推荐计划往左让一下，提示可以左滑
+    if (!Store.get('pilates.swipeHint', 0) && !REDUCED) {
+      Store.set('pilates.swipeHint', 1);
+      const r = $('planDefault').firstElementChild;
+      r.classList.add('hint');
+      setTimeout(() => r.classList.remove('hint'), 2200);
+    }
+  },
+  /** 点了滑出来的按钮 */
+  act(btn) {
+    const row = btn.closest('.prow'), id = row.dataset.id;
+    if (btn.dataset.act === 'fav') return this.render(Plans.fav(id) ? id : null);
+    // 删除：这一行先收起来，再重画
+    row.style.height = row.offsetHeight + 'px';
+    void row.offsetHeight;
+    row.classList.add('gone'); row.style.height = '0px'; row.style.marginTop = '-10px';
+    setTimeout(() => { Plans.remove(id); this.render(); }, 250);
   },
   /** 打开一个计划；id 不给 = 新建 */
   open(id) {
@@ -1456,7 +1635,7 @@ const Run = {
     if (!p || !Plans.items(p).length) return;
     this.plan = { name: p.name || '未命名计划', items: Plans.items(p) };
     this.i = 0;
-    Plans.last = p.id; Store.set('pilates.lastPlan', p.id);
+    Plans.last = p.id; Store.set('pilates.lastPlan', p.id); Store.set('pilates.todayHide', 0);
     this.look(0, 0);
   },
   /** 讲解页翻到计划里的第 k 个动作。dir = 1 往后翻，-1 往前翻 */
@@ -1486,13 +1665,16 @@ const Card = {
         v.auto = false; v.yaw = 0.3;
         v.onTick = (now) => {
           const co = App.phase === 'work' ? App.coach : null;
-          let p, rep, eff;
+          let p, rep, eff, t;
           if (co && !co.done && co.t0 != null) {
             const sec = (now - co.segStart) / 1000;
             p = stdLift(co.seg, sec); rep = Math.max(0, co.rep - 1);
             eff = co.seg === 'hold' || (co.seg === 'up' && sec >= 1) || (co.seg === 'down' && sec < 1);
-          } else ({ p, rep, eff } = demoCycle(now));
-          v.pose('std', exJoints(EX, p, rep), p, eff, EX.hot, p * EX.tuck);
+            t = co.seg === 'up' ? sec : null;
+          } else ({ c: t, p, rep, eff } = demoCycle(now));
+          const J = exJoints(EX, p, rep);
+          showArrows(v, EX, J, t, rep);
+          v.pose('std', J, p, eff, EX.hot, p * EX.tuck);
         };
         v.start();
       }
@@ -1541,7 +1723,7 @@ const App = {
   /** 首页的那一条：上次练的计划，点一下直接开始 */
   renderToday() {
     const p = Plans.get(Plans.last) || Plans.mine[0], el = $('todayPlan');
-    el.hidden = !p;
+    el.hidden = !p || !!Store.get('pilates.todayHide', 0);
     if (!p) return;
     this.homePlan = p;
     $('todayHead').textContent = Plans.last === p.id ? '上次练的计划' : '我的计划';
@@ -1567,11 +1749,12 @@ const App = {
     $('tabs').hidden = !['home', 'plan', 'me'].includes(id);
     $('tabs').classList.toggle('over', id !== 'home');
     document.querySelectorAll('#tabs .tab').forEach((el) => el.classList.toggle('on', el.dataset.tab === id));
+    arcTabs(id);
     const next = $(id);
     const cur = all.find((el) => !el.hidden && el !== next);
     clearTimeout(this.showTimer);
     for (const el of all) {
-      el.classList.remove('enter-reveal', 'enter-rise', 'enter-fade', 'enter-intro', 'leave-fade');
+      el.classList.remove('enter-reveal', 'enter-rise', 'enter-fade', 'enter-intro', 'enter-slide', 'leave-fade', 'leave-slide');
       el.style.zIndex = '';
       if (el !== next && el !== cur) el.hidden = true;
     }
@@ -1581,7 +1764,14 @@ const App = {
       return;
     }
     const toIntro = id === 'intro' && cur.id === 'home';
-    const kind = toIntro ? 'enter-intro' : id === 'stageScreen' && from ? 'enter-reveal' : id === 'summary' ? 'enter-rise' : 'enter-fade';
+    const slide = TAB_ORDER.includes(id) && TAB_ORDER.includes(cur.id);
+    const kind = slide ? 'enter-slide' : toIntro ? 'enter-intro' : id === 'stageScreen' && from ? 'enter-reveal' : id === 'summary' ? 'enter-rise' : 'enter-fade';
+    if (slide) {
+      // 往右边的页面走：新页面从右边进来，旧页面往左让
+      const dir = Math.sign(TAB_ORDER.indexOf(id) - TAB_ORDER.indexOf(cur.id));
+      next.style.setProperty('--dir', dir); cur.style.setProperty('--dir', dir);
+      cur.classList.add('leave-slide');
+    }
     if (from) {
       // 从手指按下的位置展开；没有按压记录（比如键盘操作）就用按钮中心
       const r = from.getBoundingClientRect(), ph = $('phone').getBoundingClientRect();
@@ -1610,8 +1800,8 @@ const App = {
       cur.hidden = true;
       next.style.zIndex = '';
       next.classList.remove(kind);
-      cur.classList.remove('leave-fade');
-    }, kind === 'enter-intro' ? 800 : kind === 'enter-reveal' ? 620 : kind === 'enter-rise' ? 460 : 240);
+      cur.classList.remove('leave-fade', 'leave-slide');
+    }, kind === 'enter-slide' ? 480 : kind === 'enter-intro' ? 800 : kind === 'enter-reveal' ? 620 : kind === 'enter-rise' ? 460 : 240);
   },
 
   /** 开始前的动作讲解：放示范动画，念一遍要领 */
@@ -1962,30 +2152,35 @@ const App = {
 };
 
 // 首页主题：默认浅色；?theme=dark 或右上角按钮切到深色，并记住选择
-const applyTheme = (dark) => $('home').classList.toggle('dark', dark);
+const applyTheme = (dark) => { for (const id of ['home', 'plan', 'tabs']) $(id).classList.toggle('dark', dark); };
 let darkHome = false;
 try { darkHome = localStorage.getItem('homeTheme') === 'dark'; } catch { /* 读不到就用浅色 */ }
 const themeQ = new URLSearchParams(location.search).get('theme');
 if (themeQ) darkHome = themeQ === 'dark';
 applyTheme(darkHome);
-$('btnTheme').onclick = () => {
+const toggleTheme = () => {
   darkHome = !darkHome;
   // 支持的浏览器里，深浅色之间柔和地交叉淡化
   if (document.startViewTransition && !REDUCED) document.startViewTransition(() => applyTheme(darkHome));
   else applyTheme(darkHome);
   try { localStorage.setItem('homeTheme', darkHome ? 'dark' : 'light'); } catch { /* 忽略 */ }
 };
+document.querySelectorAll('.theme-btn').forEach((el) => { el.onclick = toggleTheme; });
 
 $('btnStart').onclick = () => { Run.stop(); TARGET_REPS = 10; EX = EXERCISES[App.exIndex]; App.intro(); };
 $('todayPlan').onclick = () => Run.start(App.homePlan);
+$('todayPlan').onkeydown = (e) => { if (e.key === 'Enter' && e.target === $('todayPlan')) Run.start(App.homePlan); };
+$('todayClose').onclick = (e) => { e.stopPropagation(); Store.set('pilates.todayHide', 1); $('todayPlan').hidden = true; };
 document.querySelectorAll('#tabs .tab').forEach((el) => { el.onclick = () => App.tab(el.dataset.tab); });
 // 计划列表：点“开始”直接练，点卡片其余地方进去看和改
 $('plan').addEventListener('click', (e) => {
-  const go = e.target.closest('[data-go]'), open = e.target.closest('[data-open]');
-  if (go) Run.start(Plans.get(go.dataset.go));
+  const go = e.target.closest('[data-go]'), open = e.target.closest('[data-open]'), act = e.target.closest('[data-act]');
+  if (act) PlanUI.act(act);
+  else if (go) Run.start(Plans.get(go.dataset.go));
   else if (e.target.closest('#btnPlanNew')) PlanUI.open(null);
   else if (open) PlanUI.open(open.dataset.open);
 });
+PlanGesture.init();
 $('planEdit').addEventListener('click', (e) => PlanUI.click(e));
 $('planName').oninput = () => { const p = PlanUI.cur; if (p && !p.fixed) { p.name = $('planName').value.slice(0, 16); PlanUI.commit(); } };
 $('btnPlanBack').onclick = () => PlanUI.back();
@@ -1998,7 +2193,7 @@ $('btnPlanDel').onclick = () => {
     return PlanUI.open(copy.id);
   }
   if (el.textContent === '删除计划') { el.textContent = '再点一次，确认删除'; return; }
-  Plans.mine = Plans.mine.filter((x) => x !== p); Plans.save();
+  Plans.remove(p.id);
   p.items = []; p.name = '';
   PlanUI.back();
 };
@@ -2011,6 +2206,25 @@ $('btnClearLog').onclick = () => {
   Log.clear(); MeUI.render();
 };
 App.renderToday();
+arcTabs('home');
+// 在首页、计划、我的这三页的空白处左右滑：换到旁边那一页（按钮、示范区、计划卡片上的滑动各管各的）
+{
+  let sw = null;
+  const ph = $('phone');
+  ph.addEventListener('pointerdown', (e) => {
+    sw = null;
+    const scr = e.target.closest('#home, #plan, #me');
+    if (!scr || App.phase !== 'home' || e.target.closest('button, a, input, canvas, .prow, .art, [role="button"]')) return;
+    sw = { id: e.pointerId, x: e.clientX, y: e.clientY, page: scr.id };
+  });
+  ph.addEventListener('pointerup', (e) => {
+    if (!sw || sw.id !== e.pointerId) return;
+    const dx = e.clientX - sw.x, dy = e.clientY - sw.y, to = TAB_ORDER[TAB_ORDER.indexOf(sw.page) + (dx < 0 ? 1 : -1)];
+    sw = null;
+    if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.4 && to) App.tab(to);
+  });
+  ph.addEventListener('pointercancel', () => { sw = null; });
+}
 $('btnPrev').onclick = () => App.pick(App.exIndex - 1, -1);
 $('btnNext').onclick = () => App.pick(App.exIndex + 1, 1);
 // 在示范区左右滑也能换动作
@@ -2088,7 +2302,7 @@ window.__app = App;
 setTimeout(() => Intro3D.set('3d'), 250);
 // 识别模型比较大，排在 3D 后面再开始下载
 if (!new URLSearchParams(location.search).has('demo')) setTimeout(() => loadModel().catch(() => {}), 2000); // 方便调试
-window.__test = { TEMPO, MOVES, movePose, LIB, Plans, PlanUI, Run, Card, MoveSheet, MoveView, Voice, stdJoints, Cmp, Coach, SetupGuide, DemoSource, demoPose, readBody, EXERCISES, pick: (i) => App.pick(i, 1) };
+window.__test = { TEMPO, MOVES, movePose, moveArrows, LIB, Plans, PlanUI, Run, Card, MoveSheet, MoveView, Voice, stdJoints, Cmp, Coach, SetupGuide, DemoSource, demoPose, readBody, EXERCISES, pick: (i) => App.pick(i, 1) };
 if (new URLSearchParams(location.search).has('demo')) App.start('demo');
 
 // 把页面文件存在本机（见 sw.js）：第二次打开不用再下载

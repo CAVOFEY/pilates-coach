@@ -8,7 +8,7 @@
 /* 中文字体：OPPO Sans 4.0（可变字重 100–700），已裁剪到只含页面用到的字。改了文字后运行 tools/subset_font.py */
 @font-face {
   font-family: "OPPO Sans";
-  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=43") format("woff2");
+  src: url("./vendor/fonts/OPPOSans-subset.woff2?v=44") format("woff2");
   font-weight: 100 700;
   font-display: swap;
 }
@@ -290,7 +290,10 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 /* ================= 底部三个圆按钮：计划 / 跟练 / 我的 ================= */
 #home { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 .home-mid { gap: 18px; padding-bottom: 0; }
-#tabs { position: absolute; left: 50%; bottom: max(30px, calc(env(safe-area-inset-bottom) + 14px)); transform: translateX(-50%); z-index: 6; display: grid; grid-template-columns: repeat(3, 48px); place-items: center; gap: 6px; height: 48px; }
+#tabs { position: absolute; left: 50%; bottom: max(30px, calc(env(safe-area-inset-bottom) + 14px)); transform: translateX(-50%); z-index: 6; width: 240px; height: 48px; }
+#tabs .slot { position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; margin: -24px 0 0 -24px; display: grid; place-items: center; transform: translate(var(--x, 0px), var(--y, 0px)) scale(var(--s, 1)); transition: transform .62s var(--out); }
+#tabs.dark[data-page="plan"]::before { background: linear-gradient(to top, #213134 62%, rgba(33, 49, 52, 0)); }
+#tabs.dark[data-page="plan"] .tab:not(.on) { background: #3a3142; color: rgba(255, 255, 255, .75); box-shadow: 0 0 0 1px rgba(255, 255, 255, .12); }
 /* 计划页、个人页的内容会滚到按钮下面：按钮后面垫一层由下往上变淡的底色 */
 #tabs.over::before { content: ""; position: absolute; z-index: -1; left: -200px; right: -200px; top: -34px; bottom: -40px; pointer-events: none; background: linear-gradient(to top, var(--pink-50) 62%, rgba(255, 245, 249, 0)); }
 #tabs .tab { width: 34px; height: 34px; flex: none; border-radius: 50%; display: grid; place-items: center; color: var(--ink-soft); background: #fff; box-shadow: 0 5px 14px rgba(120, 70, 100, .15), 0 0 0 1px rgba(240, 220, 230, .9);
@@ -301,32 +304,76 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 #tabs .tab:active { transform: scale(.92); }
 
 /* ---------- 首页：今日计划 ---------- */
-.tplan { display: flex; align-items: center; gap: 10px; min-height: 54px; padding: 8px 8px 8px 18px; border-radius: 999px; background: var(--art-bg); color: var(--home-fg); text-align: left; }
+.tplan { display: flex; align-items: center; gap: 4px; min-height: 54px; padding: 8px 8px 8px 6px; border-radius: 999px; background: var(--art-bg); color: var(--home-fg); text-align: left; cursor: pointer; }
+.tplan .x { flex: none; width: 34px; height: 38px; display: grid; place-items: center; border-radius: 50%; color: var(--home-soft); opacity: .7; }
+.tplan .x svg { width: 13px; height: 13px; }
 .tplan .tx { flex: 1; min-width: 0; }
 .tplan small { display: block; font-size: 11px; letter-spacing: .14em; color: var(--home-soft); }
 .tplan b { display: block; margin-top: 2px; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tplan em { flex: none; min-height: 38px; padding: 0 18px; border-radius: 999px; display: grid; place-items: center; font-style: normal; font-size: 14px; font-weight: 600; background: var(--pink-500); color: #fff; }
+.tplan em { flex: none; min-height: 38px; padding: 0 18px; border-radius: 999px; display: grid; place-items: center; font-style: normal; font-size: 14px; font-weight: 600; background: rgba(232, 120, 159, .15); color: #a93a66; }
+#home.dark .tplan em { background: rgba(255, 255, 255, .1); color: var(--pink-200); }
 .tplan.done em { background: var(--teal-100); color: var(--teal-700); }
 
 /* ---------- 计划页、个人页 ---------- */
 #plan, #me { overflow-y: auto; padding: max(30px, env(safe-area-inset-top)) 22px calc(116px + env(safe-area-inset-bottom)); gap: 18px; }
+#plan { padding-top: max(22px, env(safe-area-inset-top)); gap: 14px; background: var(--pink-50); transition: color .3s; }
+#plan > * { flex: none; }
+.phead { display: flex; align-items: center; justify-content: space-between; margin: 14px 0 2px; }
+.phead h1 { font-size: 30px; }
+.padd { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: #27a08f; color: #fff; box-shadow: 0 8px 18px rgba(39, 160, 143, .32); }
+.padd svg { width: 20px; height: 20px; }
+.padd:active { transform: scale(.9); }
 .sub { margin: -10px 0 0; font-size: 14px; line-height: 1.6; color: var(--ink-soft); }
 .card { flex: none; background: #fff; border: 1.5px solid var(--line); border-radius: var(--r-md); padding: 16px 14px; display: flex; flex-direction: column; gap: 12px; }
 .card h2 { font-size: 16px; display: flex; align-items: baseline; justify-content: space-between; }
 .card h2 small { font-weight: 500; font-size: 12px; color: var(--ink-soft); }
 .hintline { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-soft); }
-/* 计划列表 */
+/* 计划列表：每一行后面藏着一个按钮（删除 / 收藏），往左滑露出来 */
 .plist { display: flex; flex-direction: column; gap: 10px; flex: none; }
-.plancard { display: flex; align-items: center; gap: 12px; padding: 14px 12px 14px 16px; background: #fff; border: 1.5px solid var(--line); border-radius: var(--r-md); cursor: pointer; }
-.plancard .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.plancard b { font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.plancard small { font-size: 12px; color: var(--ink-soft); }
+.prow { position: relative; border-radius: 20px; touch-action: pan-y; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; transition: transform .28s var(--out), height .24s var(--out), margin .24s var(--out), opacity .2s; }
+.pact { position: absolute; inset: 0 0 0 auto; width: 104px; padding-left: 20px; border-radius: 0 20px 20px 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 12px; font-weight: 600; visibility: hidden; }
+.prow.open .pact, .prow.moving .pact, .prow.hint .pact { visibility: visible; }
+.pact svg { width: 22px; height: 22px; }
+.pact.del { background: #e5484d; color: #fff; }
+.pact.fav { background: #ffd24a; color: #5a4300; }
+.plancard { position: relative; display: flex; align-items: center; gap: 12px; padding: 12px; background: #fff; border-radius: 20px; cursor: pointer; box-shadow: 0 6px 18px rgba(120, 70, 100, .07), 0 0 0 1px rgba(240, 220, 230, .8); transition: transform .34s var(--out), box-shadow .24s; }
+.prow.open .plancard { transform: translateX(-84px); }
+.prow.moving .plancard { transition: none; }
+.ptile { flex: none; width: 54px; height: 54px; border-radius: 16px; display: grid; place-content: center; justify-items: center; background: var(--pink-100); color: #a93a66; }
+.prow[data-kind="rec"] .ptile, .prow[data-kind="fav"] .ptile { background: var(--teal-100); color: var(--teal-700); }
+.ptile b { font-family: var(--font-num); font-size: 22px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.ptile small { margin-top: 3px; font-size: 10px; line-height: 1; color: inherit; }
+.plancard .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.plancard .tx > b { display: flex; align-items: center; gap: 5px; font-size: 16px; font-weight: 600; }
+.plancard .tx > b span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plancard .tx > b svg { flex: none; width: 14px; height: 14px; color: #f0b400; }
+.plancard .tx > small { font-size: 12px; color: var(--ink-soft); }
 .ptags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px; }
-.ptags i { font-style: normal; font-size: 12px; padding: 3px 9px; border-radius: 999px; background: var(--pink-100); color: var(--ink); }
-.pgo { flex: none; min-height: 40px; padding: 0 18px; border-radius: 999px; font-size: 14px; font-weight: 600; background: var(--pink-500); color: #fff; }
+.ptags i { font-style: normal; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--pink-50); color: var(--ink-soft); box-shadow: 0 0 0 1px var(--line) inset; }
+.pgo { flex: none; min-height: 40px; padding: 0 16px; border-radius: 999px; font-size: 14px; font-weight: 600; background: var(--pink-500); color: #fff; }
 .pgo:disabled { background: var(--pink-100); color: var(--ink-soft); }
-.addplan { flex: none; min-height: 52px; border-radius: var(--r-md); border: 1.5px dashed var(--teal-300); background: var(--teal-50); color: var(--teal-700); font-size: 15px; font-weight: 600; }
-.sech { flex: none; margin: 8px 0 -6px; font-size: 13px; font-weight: 500; letter-spacing: .14em; color: var(--ink-soft); }
+.sech { flex: none; margin: 14px 0 -2px; font-size: 13px; font-weight: 500; letter-spacing: .14em; color: var(--ink-soft); }
+#planMine .empty { padding: 20px 14px; border-radius: 20px; box-shadow: 0 0 0 1.5px var(--line) inset; font-size: 13px; }
+/* 长按拎起来排序 */
+.plist.sorting .prow { transition: transform .22s var(--out); }
+.plist.sorting .prow.lift { transition: none; z-index: 3; }
+.prow.lift .plancard { box-shadow: 0 18px 36px rgba(120, 70, 100, .22), 0 0 0 1.5px var(--pink-200); }
+.plist.sorting .prow.settle { transition: transform .18s var(--out); }
+.prow.gone { opacity: 0; transform: translateX(-40px); }
+.prow.pop { animation: rowpop .5s var(--out) both; }
+@keyframes rowpop { from { opacity: 0; transform: translateY(-14px) scale(.96); } }
+/* 第一次来：推荐计划轻轻往左让一下，露出后面的星星 */
+.prow.hint .plancard { animation: nudge 1.5s var(--out) .5s both; }
+@keyframes nudge { 0%, 100% { transform: none; } 35%, 60% { transform: translateX(-56px); } }
+/* 深色 */
+#plan.dark { background: radial-gradient(90% 40% at 50% 20%, #4b3a55 0%, transparent 75%), linear-gradient(170deg, #2a2230, #1f3336); color: #fff; }
+#plan.dark .brand span, #plan.dark .theme-btn, #plan.dark .sech, #plan.dark .plancard .tx > small, #plan.dark .empty { color: rgba(255, 255, 255, .62); }
+#plan.dark .plancard { background: #3a3142; box-shadow: 0 0 0 1px rgba(255, 255, 255, .08); }
+#plan.dark .ptile { background: rgba(249, 201, 220, .14); color: var(--pink-200); }
+#plan.dark .prow[data-kind="rec"] .ptile, #plan.dark .prow[data-kind="fav"] .ptile { background: rgba(143, 220, 207, .14); color: var(--teal-300); }
+#plan.dark .ptags i { background: transparent; color: rgba(255, 255, 255, .7); box-shadow: 0 0 0 1px rgba(255, 255, 255, .16) inset; }
+#plan.dark #planMine .empty { box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .14) inset; }
+@media (prefers-reduced-motion: reduce) { .prow.hint .plancard, .prow.pop { animation: none; } }
 /* 一个计划 */
 #planEdit { overflow-y: auto; padding: max(18px, env(safe-area-inset-top)) 22px calc(22px + env(safe-area-inset-bottom)); gap: 16px; background: var(--pink-50); }
 #planEdit > * { flex: none; }
@@ -434,6 +481,13 @@ h2 { font-size: 18px; margin: 0; font-weight: 600; }
 @keyframes rise { from { opacity: 0; transform: translateY(28px); } }
 /* 返回首页：只淡入，比进入快 */
 .enter-fade { animation: fade .22s ease-out both; }
+/* 首页、计划、我的之间：新的一页从旁边滑进来，旧的一页往另一边让开 */
+.enter-slide { animation: slideIn .46s var(--out) both; }
+.leave-slide { animation: slideOut .34s var(--out) both; }
+@keyframes slideIn { from { transform: translateX(calc(var(--dir) * 34%)); opacity: 0; } }
+@keyframes slideOut { to { transform: translateX(calc(var(--dir) * -22%)); opacity: 0; } }
+#home, #plan, #me { touch-action: pan-y; }
+@media (prefers-reduced-motion: reduce) { #tabs .slot { transition: none; } }
 @keyframes fade { from { opacity: 0; } }
 
 /* 摆放：部位标签变色、保持不动的进度 */
@@ -504,8 +558,8 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
 .theme-btn { position: relative; }
 .theme-btn svg { position: absolute; inset: 10px; width: 20px; height: 20px; transition: transform .5s var(--out), opacity .25s; }
 .ic-sun { opacity: 0; transform: rotate(-90deg) scale(.5); }
-#home.dark .ic-sun { opacity: 1; transform: none; }
-#home.dark .ic-moon { opacity: 0; transform: rotate(90deg) scale(.5); }
+.dark .ic-sun { opacity: 1; transform: none; }
+.dark .ic-moon { opacity: 0; transform: rotate(90deg) scale(.5); }
 
 /* ================= 动作讲解页 ================= */
 #intro {
@@ -614,10 +668,11 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
         <button class="nav next" id="btnNext" aria-label="下一个动作"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </div>
       <div class="info"><b id="exName" aria-live="polite">桥式</b><span>约 3 分钟 · 10 次</span></div>
-      <button class="tplan" id="todayPlan" hidden>
+      <div class="tplan" id="todayPlan" role="button" tabindex="0" hidden>
+        <button class="x" id="todayClose" aria-label="关掉这一条"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>
         <span class="tx"><small id="todayHead">今日计划</small><b id="todayText"></b></span>
         <em id="todayGo">开始</em>
-      </button>
+      </div>
       <button class="go" id="btnStart">开始跟练</button>
       <button class="btn btn-link" id="btnDemo">先看演示</button>
     </div>
@@ -750,13 +805,27 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
 
   <!-- 训练计划：每周哪几天练、每次练什么 -->
   <section class="screen" id="plan" hidden>
-    <h1>我的计划</h1>
-    <p class="sub">点「开始」直接练；点计划可以看里面的动作。</p>
+    <div class="home-top">
+      <div class="brand">
+        <svg viewBox="0 0 34 34" aria-hidden="true">
+          <circle cx="17" cy="17" r="17" fill="#f9c9dc"/>
+          <path d="M6 23 L15 13 L27 23" fill="none" stroke="#3bb8a6" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="7.5" cy="19" r="2.6" fill="#e8789f"/>
+        </svg>
+        <span>PILATES COACH</span>
+      </div>
+      <button class="theme-btn" aria-label="切换深色或浅色">
+        <svg class="ic-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" fill="currentColor"/></svg>
+        <svg class="ic-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.4" fill="currentColor"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3l1.7 1.7M17 17l1.7 1.7M18.7 5.3 17 7M7 17l-1.7 1.7"/></g></svg>
+      </button>
+    </div>
+    <div class="phead">
+      <h1>我的计划</h1>
+      <button class="padd" id="btnPlanNew" aria-label="添加计划"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></svg></button>
+    </div>
     <div class="plist" id="planMine"></div>
-    <button class="addplan" id="btnPlanNew">＋ 添加计划</button>
-    <h2 class="sech">默认计划</h2>
+    <h2 class="sech">推荐计划</h2>
     <div class="plist" id="planDefault"></div>
-    <p class="hintline" style="text-align:center">计划只存在这台手机的浏览器里，没有上传。</p>
   </section>
 
   <!-- 一个计划：起名字、加动作 -->
@@ -820,9 +889,9 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
 
   <!-- 底部导航：计划 / 跟练 / 我的 -->
   <nav id="tabs" aria-label="页面切换">
-    <button class="tab" data-tab="plan" aria-label="训练计划"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5.5" width="16" height="14.5" rx="3.5"/><path d="M8 3.5v4M16 3.5v4M8.6 13.4l2.3 2.3 4.5-4.6"/></svg></button>
-    <button class="tab on" data-tab="home" aria-label="开始跟练"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 17.5 10.5 9.5 20.5 17.5"/><circle cx="5" cy="13" r="1.6" fill="currentColor" stroke="none"/></svg></button>
-    <button class="tab" data-tab="me" aria-label="我的"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.8 20c.9-3.6 3.7-5.4 7.2-5.4s6.3 1.8 7.2 5.4"/></svg></button>
+    <span class="slot"><button class="tab" data-tab="plan" aria-label="训练计划"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5.5" width="16" height="14.5" rx="3.5"/><path d="M8 3.5v4M16 3.5v4M8.6 13.4l2.3 2.3 4.5-4.6"/></svg></button></span>
+    <span class="slot"><button class="tab on" data-tab="home" aria-label="开始跟练"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 17.5 10.5 9.5 20.5 17.5"/><circle cx="5" cy="13" r="1.6" fill="currentColor" stroke="none"/></svg></button></span>
+    <span class="slot"><button class="tab" data-tab="me" aria-label="我的"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.8 20c.9-3.6 3.7-5.4 7.2-5.4s6.3 1.8 7.2 5.4"/></svg></button></span>
   </nav>
 
 </div>
@@ -849,6 +918,6 @@ button.pressed, button:active { transition-duration: .09s, .09s, .09s, .09s, .09
 })();
 </script>
 <link rel="modulepreload" href="./vendor/three.module.min.js">
-<script type="module" src="./app.js?v=43"></script>
+<script type="module" src="./app.js?v=44"></script>
 </body>
 </html>
