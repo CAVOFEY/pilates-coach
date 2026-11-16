@@ -21,7 +21,7 @@ if not os.path.exists(SRC):
 
 chars = set(string.ascii_letters + string.digits + string.punctuation + " ")
 chars |= set("，。、；：？！…—·“”‘’（）《》°×→←↑↓✓")
-for name in ("index.html", "app.js"):
+for name in ("index.html", "app.js", "moves.js"):
     with open(os.path.join(ROOT, name), encoding="utf-8") as f:
         chars |= {c for c in f.read() if ord(c) > 0x2000}
 
