@@ -2,7 +2,7 @@
 // 流程：首页 → 摆放（看到全身、躺好）→ 跟练（计数 + 语音纠正）→ 小结
 // 骨架识别用 Google MediaPipe Pose（开源模型，本地运行）；动作标准判定和教练逻辑是本项目自己写的。
 
-import { MOVES, moveJoints } from './moves.js?v=39';
+import { MOVES, moveJoints } from './moves.js?v=40';
 const $ = (id) => document.getElementById(id);
 let TARGET_REPS = 10;   // 自由练习一组 10 次；按计划练时换成计划里定的次数
 
@@ -1048,7 +1048,7 @@ const stdLift = (seg, sec) => (seg === 'up' ? ease(clamp(sec / 3.2, 0, 1)) : seg
 /** 这个动作“标准”的角度范围 [小, 大] */
 const stdRange = (ex) => (ex.id === 'kneefold' ? [72, ex.top] : [ex.top, 180]);
 let fig3dPromise = null;
-const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=39'); await m.load3D(); return m; })()
+const get3D = () => (fig3dPromise ??= (async () => { const m = await import('./fig3d.js?v=40'); await m.load3D(); return m; })()
   .catch((e) => { fig3dPromise = null; throw e; }));
 
 /** 讲解页的 3D 示范 */
@@ -1257,7 +1257,7 @@ const Plans = {
     return Object.keys(sum).sort((a, b) => sum[b] - sum[a]).slice(0, 4);
   },
   mins(p) { return Math.max(1, Math.round(this.items(p).reduce((n, it) => n + itemSec(it), 0) / 60)); },
-  meta(p) { const n = this.items(p).length; return n ? `${n} 个动作 · 约 ${this.mins(p)} 分钟` : '还没有动作'; },
+  meta(p) { const n = this.items(p).length; return n ? `约 ${this.mins(p)} 分钟 · ${n} 个动作` : '还没有动作'; },
 };
 const tagHtml = (tags, lead) => (lead ? `<span>${lead}</span>` : '') + tags.map((t) => `<b>${t}</b>`).join('');
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -1322,7 +1322,7 @@ const PlanUI = {
   /** 计划列表 */
   render() {
     const card = (p) => `<div class="plancard" data-open="${p.id}" role="button" tabindex="0">
-      <span class="tx"><b>${esc(p.name || '未命名计划')}</b><small>${p.note ? p.note + ' · ' : ''}${Plans.meta(p)}</small>
+      <span class="tx"><b>${esc(p.name || '未命名计划')}</b><small>${Plans.meta(p)}</small>
       <span class="ptags">${Plans.tags(p).map((t) => `<i>${t}</i>`).join('')}</span></span>
       <button class="pgo" data-go="${p.id}"${Plans.items(p).length ? '' : ' disabled'}>开始</button></div>`;
     $('planMine').innerHTML = Plans.mine.map(card).join('') || '<p class="empty">还没有自己的计划。<br>点下面的按钮建一个。</p>';
